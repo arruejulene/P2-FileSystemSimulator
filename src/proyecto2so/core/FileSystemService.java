@@ -35,6 +35,41 @@ public class FileSystemService {
         parentDirectory.addSubdirectory(newDirectory);
     }
 
+    public void createFile(String parentPath, String fileName, String owner, int sizeInBlocks) {
+        if (root == null || disk == null) {
+            throw new IllegalStateException("El sistema de archivos no ha sido inicializado.");
+        }
+
+        if (sizeInBlocks <= 0) {
+            throw new IllegalArgumentException("El tamaño en bloques debe ser mayor que 0.");
+        }
+
+        DirectoryNode parentDirectory = resolveDirectory(parentPath);
+
+        if (parentDirectory == null) {
+            throw new IllegalStateException("La ruta padre no existe.");
+        }
+
+        FileNode newFile = new FileNode(fileName, owner, parentDirectory, sizeInBlocks, -1);
+        parentDirectory.addFile(newFile);
+        addToFileIndex(newFile);
+    }
+
+    private void addToFileIndex(FileNode file) {
+        if (fileCount >= fileIndex.length) {
+            FileNode[] newArray = new FileNode[fileIndex.length * 2];
+
+            for (int i = 0; i < fileIndex.length; i++) {
+                newArray[i] = fileIndex[i];
+            }
+
+            fileIndex = newArray;
+        }
+
+        fileIndex[fileCount] = file;
+        fileCount++;
+    }
+
     private DirectoryNode resolveDirectory(String path) {
         if (path == null || path.trim().isEmpty()) {
             throw new IllegalArgumentException("La ruta no puede ser nula o vacía.");
