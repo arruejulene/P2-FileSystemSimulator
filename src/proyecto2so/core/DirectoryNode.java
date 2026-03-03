@@ -19,6 +19,10 @@ public class DirectoryNode extends FSNode {
             throw new IllegalArgumentException("El subdirectorio no puede ser nulo.");
         }
 
+        if (containsName(directory.getName())) {
+            throw new IllegalStateException("Ya existe un nodo con ese nombre en este directorio.");
+        }
+
         ensureSubdirectoryCapacity();
         subdirectories[subdirectoryCount] = directory;
         subdirectoryCount++;
@@ -30,10 +34,34 @@ public class DirectoryNode extends FSNode {
             throw new IllegalArgumentException("El archivo no puede ser nulo.");
         }
 
+        if (containsName(file.getName())) {
+            throw new IllegalStateException("Ya existe un nodo con ese nombre en este directorio.");
+        }
+
         ensureFileCapacity();
         files[fileCount] = file;
         fileCount++;
         file.setParent(this);
+    }
+
+    public boolean containsName(String name) {
+        if (name == null || name.trim().isEmpty()) {
+            throw new IllegalArgumentException("El nombre no puede ser nulo o vacío.");
+        }
+
+        for (int i = 0; i < subdirectoryCount; i++) {
+            if (subdirectories[i].getName().equals(name)) {
+                return true;
+            }
+        }
+
+        for (int i = 0; i < fileCount; i++) {
+            if (files[i].getName().equals(name)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public DirectoryNode[] getSubdirectories() {
