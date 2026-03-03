@@ -20,6 +20,70 @@ public class FileSystemService {
         this.fileCount = 0;
     }
 
+    public void createDirectory(String parentPath, String directoryName, String owner) {
+        if (root == null || disk == null) {
+            throw new IllegalStateException("El sistema de archivos no ha sido inicializado.");
+        }
+
+        DirectoryNode parentDirectory = resolveDirectory(parentPath);
+
+        if (parentDirectory == null) {
+            throw new IllegalStateException("La ruta padre no existe.");
+        }
+
+        DirectoryNode newDirectory = new DirectoryNode(directoryName, owner, parentDirectory);
+        parentDirectory.addSubdirectory(newDirectory);
+    }
+
+    private DirectoryNode resolveDirectory(String path) {
+        if (path == null || path.trim().isEmpty()) {
+            throw new IllegalArgumentException("La ruta no puede ser nula o vacía.");
+        }
+
+        if (root == null) {
+            return null;
+        }
+
+        if ("/".equals(path)) {
+            return root;
+        }
+
+        if (!path.startsWith("/")) {
+            throw new IllegalArgumentException("La ruta debe empezar con '/'.");
+        }
+
+        String[] parts = path.split("/");
+        DirectoryNode current = root;
+
+        for (int i = 1; i < parts.length; i++) {
+            if (parts[i] == null || parts[i].isEmpty()) {
+                continue;
+            }
+
+            DirectoryNode next = findSubdirectoryByName(current, parts[i]);
+
+            if (next == null) {
+                return null;
+            }
+
+            current = next;
+        }
+
+        return current;
+    }
+
+    private DirectoryNode findSubdirectoryByName(DirectoryNode parent, String name) {
+        DirectoryNode[] subdirs = parent.getSubdirectories();
+
+        for (int i = 0; i < subdirs.length; i++) {
+            if (subdirs[i].getName().equals(name)) {
+                return subdirs[i];
+            }
+        }
+
+        return null;
+    }
+
     public DirectoryNode getRoot() {
         return root;
     }
