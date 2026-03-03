@@ -123,4 +123,13 @@ public class VirtualDisk {
 
         return chain;
     }
+    
+    public void freeChain(int firstBlockId) {
+        int[] chain = traverseChain(firstBlockId);
+
+        for (int i = 0; i < chain.length; i++) {
+            Block block = getBlockById(chain[i]);
+            block.release();
+        }
+    }
 }
