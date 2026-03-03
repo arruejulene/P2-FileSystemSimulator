@@ -1,20 +1,10 @@
-/*
- * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
- * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Main.java to edit this template
- */
 package proyecto2so;
 
-/**
- *
- * @author Indatech
- */
-public class Proyecto2SO {
+import proyecto2so.demo.NodeStructureTest;
 
-    /**
-     * @param args the command line arguments
-     */
+public class Proyecto2SO {
     public static void main(String[] args) {
-        // TODO code application logic here
+        System.out.println("ENTRANDO A Proyecto2SO");
+        NodeStructureTest.main(args);
     }
-    
 }
