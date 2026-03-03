@@ -44,7 +44,7 @@ public class VirtualDisk {
 
         return count;
     }
-    
+
     public int[] findFreeBlocks(int amount) {
         if (amount <= 0) {
             throw new IllegalArgumentException("La cantidad solicitada debe ser mayor que 0.");
@@ -62,11 +62,11 @@ public class VirtualDisk {
                 freeBlockIds[index] = blocks[i].getId();
                 index++;
             }
+        }
+
+        return freeBlockIds;
     }
 
-    return freeBlockIds;
-    }
-    
     public void occupyBlock(int blockId, String fileName, int nextBlockId) {
         Block block = getBlockById(blockId);
 
@@ -75,5 +75,52 @@ public class VirtualDisk {
         }
 
         block.occupy(fileName, nextBlockId);
+    }
+
+    public int[] traverseChain(int firstBlockId) {
+        if (firstBlockId < 0 || firstBlockId >= totalBlocks) {
+            throw new IllegalArgumentException("ID de bloque inicial fuera de rango.");
+        }
+
+        Block firstBlock = getBlockById(firstBlockId);
+
+        if (firstBlock.isFree()) {
+            throw new IllegalStateException("No se puede recorrer una cadena desde un bloque libre.");
+        }
+
+        int[] visited = new int[totalBlocks];
+        boolean[] seen = new boolean[totalBlocks];
+        int count = 0;
+        int currentId = firstBlockId;
+
+        while (currentId != -1) {
+            if (currentId < 0 || currentId >= totalBlocks) {
+                throw new IllegalStateException("La cadena contiene una referencia inválida.");
+            }
+
+            if (seen[currentId]) {
+                throw new IllegalStateException("Se detectó un ciclo en la cadena de bloques.");
+            }
+
+            Block currentBlock = getBlockById(currentId);
+
+            if (currentBlock.isFree()) {
+                throw new IllegalStateException("La cadena apunta a un bloque libre.");
+            }
+
+            seen[currentId] = true;
+            visited[count] = currentId;
+            count++;
+
+            currentId = currentBlock.getNextBlockId();
+        }
+
+        int[] chain = new int[count];
+
+        for (int i = 0; i < count; i++) {
+            chain[i] = visited[i];
+        }
+
+        return chain;
     }
 }
