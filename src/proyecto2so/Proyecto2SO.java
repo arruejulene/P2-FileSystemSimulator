@@ -1,10 +1,10 @@
 package proyecto2so;
 
-import proyecto2so.demo.FreeBlockSearchTest;
+import proyecto2so.demo.OccupyBlockTest;
 
 public class Proyecto2SO {
     public static void main(String[] args) {
         System.out.println("ENTRANDO A Proyecto2SO");
-        FreeBlockSearchTest.main(args);
+        OccupyBlockTest.main(args);
     }
 }

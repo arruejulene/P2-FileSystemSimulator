@@ -66,4 +66,14 @@ public class VirtualDisk {
 
     return freeBlockIds;
     }
+    
+    public void occupyBlock(int blockId, String fileName, int nextBlockId) {
+        Block block = getBlockById(blockId);
+
+        if (!block.isFree()) {
+            throw new IllegalStateException("El bloque " + blockId + " ya está ocupado.");
+        }
+
+        block.occupy(fileName, nextBlockId);
+    }
 }
