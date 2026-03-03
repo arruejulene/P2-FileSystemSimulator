@@ -44,4 +44,26 @@ public class VirtualDisk {
 
         return count;
     }
+    
+    public int[] findFreeBlocks(int amount) {
+        if (amount <= 0) {
+            throw new IllegalArgumentException("La cantidad solicitada debe ser mayor que 0.");
+        }
+
+        if (countFreeBlocks() < amount) {
+            throw new IllegalStateException("No hay suficientes bloques libres.");
+        }
+
+        int[] freeBlockIds = new int[amount];
+        int index = 0;
+
+        for (int i = 0; i < totalBlocks && index < amount; i++) {
+            if (blocks[i].isFree()) {
+                freeBlockIds[index] = blocks[i].getId();
+                index++;
+            }
+    }
+
+    return freeBlockIds;
+    }
 }
