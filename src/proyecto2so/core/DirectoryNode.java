@@ -44,6 +44,32 @@ public class DirectoryNode extends FSNode {
         file.setParent(this);
     }
 
+    public void removeFileByName(String fileName) {
+        if (fileName == null || fileName.trim().isEmpty()) {
+            throw new IllegalArgumentException("El nombre del archivo no puede ser nulo o vacío.");
+        }
+
+        int foundIndex = -1;
+
+        for (int i = 0; i < fileCount; i++) {
+            if (files[i].getName().equals(fileName)) {
+                foundIndex = i;
+                break;
+            }
+        }
+
+        if (foundIndex == -1) {
+            throw new IllegalStateException("El archivo no existe en este directorio.");
+        }
+
+        for (int i = foundIndex; i < fileCount - 1; i++) {
+            files[i] = files[i + 1];
+        }
+
+        files[fileCount - 1] = null;
+        fileCount--;
+    }
+
     public boolean containsName(String name) {
         if (name == null || name.trim().isEmpty()) {
             throw new IllegalArgumentException("El nombre no puede ser nulo o vacío.");

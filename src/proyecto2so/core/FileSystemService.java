@@ -123,6 +123,53 @@ public class FileSystemService {
         return disk.traverseChain(file.getFirstBlockId());
     }
 
+    public void deleteFile(String filePath) {
+        if (root == null || disk == null) {
+            throw new IllegalStateException("El sistema de archivos no ha sido inicializado.");
+        }
+
+        FileNode file = getFileByPath(filePath);
+
+        if (file == null) {
+            throw new IllegalStateException("El archivo no existe.");
+        }
+
+        if (file.getFirstBlockId() >= 0) {
+            disk.freeChain(file.getFirstBlockId());
+        }
+
+        DirectoryNode parent = file.getParent();
+
+        if (parent == null) {
+            throw new IllegalStateException("El archivo no tiene directorio padre.");
+        }
+
+        parent.removeFileByName(file.getName());
+        removeFromFileIndex(file);
+    }
+
+    private void removeFromFileIndex(FileNode file) {
+        int foundIndex = -1;
+
+        for (int i = 0; i < fileCount; i++) {
+            if (fileIndex[i] == file) {
+                foundIndex = i;
+                break;
+            }
+        }
+
+        if (foundIndex == -1) {
+            throw new IllegalStateException("El archivo no existe en el índice global.");
+        }
+
+        for (int i = foundIndex; i < fileCount - 1; i++) {
+            fileIndex[i] = fileIndex[i + 1];
+        }
+
+        fileIndex[fileCount - 1] = null;
+        fileCount--;
+    }
+
     private void addToFileIndex(FileNode file) {
         if (fileCount >= fileIndex.length) {
             FileNode[] newArray = new FileNode[fileIndex.length * 2];
