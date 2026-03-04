@@ -1,10 +1,10 @@
 package proyecto2so;
 
-import proyecto2so.demo.DeleteDirectoryRecursiveTest;
+import proyecto2so.demo.RenameTest;
 
 public class Proyecto2SO {
     public static void main(String[] args) {
         System.out.println("ENTRANDO A Proyecto2SO");
-        DeleteDirectoryRecursiveTest.main(args);
+        RenameTest.main(args);
     }
 }

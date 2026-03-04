@@ -174,6 +174,66 @@ public class FileSystemService {
         parent.removeSubdirectoryByName(target.getName());
     }
 
+    public void renameFile(String filePath, String newName) {
+        if (root == null || disk == null) {
+            throw new IllegalStateException("El sistema de archivos no ha sido inicializado.");
+        }
+
+        if (newName == null || newName.trim().isEmpty()) {
+            throw new IllegalArgumentException("El nuevo nombre no puede ser nulo o vacío.");
+        }
+
+        FileNode file = getFileByPath(filePath);
+
+        if (file == null) {
+            throw new IllegalStateException("El archivo no existe.");
+        }
+
+        DirectoryNode parent = file.getParent();
+
+        if (parent == null) {
+            throw new IllegalStateException("El archivo no tiene directorio padre.");
+        }
+
+        if (!file.getName().equals(newName) && parent.containsName(newName)) {
+            throw new IllegalStateException("Ya existe un nodo con ese nombre en el directorio padre.");
+        }
+
+        file.setName(newName);
+    }
+
+    public void renameDirectory(String directoryPath, String newName) {
+        if (root == null || disk == null) {
+            throw new IllegalStateException("El sistema de archivos no ha sido inicializado.");
+        }
+
+        if (newName == null || newName.trim().isEmpty()) {
+            throw new IllegalArgumentException("El nuevo nombre no puede ser nulo o vacío.");
+        }
+
+        if ("/".equals(directoryPath)) {
+            throw new IllegalStateException("No se puede renombrar la raíz.");
+        }
+
+        DirectoryNode directory = resolveDirectory(directoryPath);
+
+        if (directory == null) {
+            throw new IllegalStateException("El directorio no existe.");
+        }
+
+        DirectoryNode parent = directory.getParent();
+
+        if (parent == null) {
+            throw new IllegalStateException("El directorio no tiene padre.");
+        }
+
+        if (!directory.getName().equals(newName) && parent.containsName(newName)) {
+            throw new IllegalStateException("Ya existe un nodo con ese nombre en el directorio padre.");
+        }
+
+        directory.setName(newName);
+    }
+
     private void deleteDirectoryContents(DirectoryNode directory) {
         FileNode[] files = directory.getFiles();
 
