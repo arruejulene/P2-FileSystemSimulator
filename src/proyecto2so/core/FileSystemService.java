@@ -50,7 +50,14 @@ public class FileSystemService {
             throw new IllegalStateException("La ruta padre no existe.");
         }
 
-        FileNode newFile = new FileNode(fileName, owner, parentDirectory, sizeInBlocks, -1);
+        int[] allocatedBlocks = disk.findFreeBlocks(sizeInBlocks);
+
+        for (int i = 0; i < allocatedBlocks.length; i++) {
+            int nextBlockId = (i == allocatedBlocks.length - 1) ? -1 : allocatedBlocks[i + 1];
+            disk.occupyBlock(allocatedBlocks[i], fileName, nextBlockId);
+        }
+
+        FileNode newFile = new FileNode(fileName, owner, parentDirectory, sizeInBlocks, allocatedBlocks[0]);
         parentDirectory.addFile(newFile);
         addToFileIndex(newFile);
     }
