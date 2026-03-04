@@ -234,6 +234,21 @@ public class FileSystemService {
         directory.setName(newName);
     }
 
+    public AllocationEntry[] getAllocationTable() {
+        AllocationEntry[] table = new AllocationEntry[fileCount];
+
+        for (int i = 0; i < fileCount; i++) {
+            FileNode file = fileIndex[i];
+            table[i] = new AllocationEntry(
+                    file.getName(),
+                    file.getSizeInBlocks(),
+                    file.getFirstBlockId()
+            );
+        }
+
+        return table;
+    }
+
     private void deleteDirectoryContents(DirectoryNode directory) {
         FileNode[] files = directory.getFiles();
 
