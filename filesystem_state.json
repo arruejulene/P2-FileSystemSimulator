@@ -1,0 +1,22 @@
+{
+  "totalBlocks": 10,
+  "directories": [
+    {"path":"/docs","owner":"iraia"},
+    {"path":"/docs/personal","owner":"iraia"}  ],
+  "files": [
+    {"path":"/docs/a.txt","owner":"iraia","sizeInBlocks":2,"firstBlockId":0},
+    {"path":"/docs/personal/b.txt","owner":"iraia","sizeInBlocks":3,"firstBlockId":2}
+  ],
+  "blocks": [
+    {"id":0,"free":false,"fileName":"a.txt","nextBlockId":1},
+    {"id":1,"free":false,"fileName":"a.txt","nextBlockId":-1},
+    {"id":2,"free":false,"fileName":"b.txt","nextBlockId":3},
+    {"id":3,"free":false,"fileName":"b.txt","nextBlockId":4},
+    {"id":4,"free":false,"fileName":"b.txt","nextBlockId":-1},
+    {"id":5,"free":true,"fileName":null,"nextBlockId":-1},
+    {"id":6,"free":true,"fileName":null,"nextBlockId":-1},
+    {"id":7,"free":true,"fileName":null,"nextBlockId":-1},
+    {"id":8,"free":true,"fileName":null,"nextBlockId":-1},
+    {"id":9,"free":true,"fileName":null,"nextBlockId":-1}
+  ]
+}
