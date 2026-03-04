@@ -36,22 +36,35 @@ public class FileSystemService {
     }
 
     public void createFile(String parentPath, String fileName, String owner, int sizeInBlocks) {
-        if (root == null || disk == null) {
-            throw new IllegalStateException("El sistema de archivos no ha sido inicializado.");
-        }
+    if (root == null || disk == null) {
+        throw new IllegalStateException("El sistema de archivos no ha sido inicializado.");
+    }
 
-        if (sizeInBlocks <= 0) {
-            throw new IllegalArgumentException("El tamaño en bloques debe ser mayor que 0.");
-        }
+    if (fileName == null || fileName.trim().isEmpty()) {
+        throw new IllegalArgumentException("El nombre del archivo no puede ser nulo o vacío.");
+    }
 
-        DirectoryNode parentDirectory = resolveDirectory(parentPath);
+    if (owner == null || owner.trim().isEmpty()) {
+        throw new IllegalArgumentException("El owner no puede ser nulo o vacío.");
+    }
 
-        if (parentDirectory == null) {
-            throw new IllegalStateException("La ruta padre no existe.");
-        }
+    if (sizeInBlocks <= 0) {
+        throw new IllegalArgumentException("El tamaño en bloques debe ser mayor que 0.");
+    }
 
-        int[] allocatedBlocks = disk.findFreeBlocks(sizeInBlocks);
+    DirectoryNode parentDirectory = resolveDirectory(parentPath);
 
+    if (parentDirectory == null) {
+        throw new IllegalStateException("La ruta padre no existe.");
+    }
+
+    if (parentDirectory.containsName(fileName)) {
+        throw new IllegalStateException("Ya existe un nodo con ese nombre en este directorio.");
+    }
+
+    int[] allocatedBlocks = disk.findFreeBlocks(sizeInBlocks);
+
+    try {
         for (int i = 0; i < allocatedBlocks.length; i++) {
             int nextBlockId = (i == allocatedBlocks.length - 1) ? -1 : allocatedBlocks[i + 1];
             disk.occupyBlock(allocatedBlocks[i], fileName, nextBlockId);
@@ -60,7 +73,17 @@ public class FileSystemService {
         FileNode newFile = new FileNode(fileName, owner, parentDirectory, sizeInBlocks, allocatedBlocks[0]);
         parentDirectory.addFile(newFile);
         addToFileIndex(newFile);
+
+    } catch (Exception ex) {
+        for (int i = 0; i < allocatedBlocks.length; i++) {
+            Block block = disk.getBlockById(allocatedBlocks[i]);
+            if (!block.isFree() && fileName.equals(block.getFileName())) {
+                block.release();
+            }
+        }
+        throw ex;
     }
+}
 
     public FileNode getFileByPath(String filePath) {
         if (filePath == null || filePath.trim().isEmpty()) {
@@ -372,4 +395,17 @@ public class FileSystemService {
     public int getFileCount() {
         return fileCount;
     }
+    
+    private SystemFileSeed findSystemFileByPos(SystemFileSeed[] seeds, int pos) {
+    for (int i = 0; i < seeds.length; i++) {
+        if (seeds[i].getPos() == pos) return seeds[i];
+    }
+    return null;
+    
+  
+
+    
+    
+}
+    
 }

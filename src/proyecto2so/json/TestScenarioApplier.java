@@ -1,19 +1,21 @@
 package proyecto2so.json;
 
 import proyecto2so.core.FileSystemService;
+import proyecto2so.core.JsonScenario;
+import proyecto2so.core.SystemFileSeed;
 
 public class TestScenarioApplier {
-    public void applyFromJson(String filePath, FileSystemService fs) {
+
+    public void applyFromJson(String filePath, FileSystemService fs) throws Exception {
         if (filePath == null || filePath.trim().isEmpty()) {
             throw new IllegalArgumentException("La ruta del JSON no puede ser nula o vacía.");
         }
 
-        TestScenarioLoader loader = new TestScenarioLoader();
-        TestScenario scenario = loader.load(filePath);
+        JsonScenario scenario = proyecto2so.core.JsonScenarioLoader.loadFromFile(filePath);
         apply(scenario, fs);
     }
 
-    public void apply(TestScenario scenario, FileSystemService fs) {
+    public void apply(JsonScenario scenario, FileSystemService fs) {
         if (scenario == null) {
             throw new IllegalArgumentException("El escenario no puede ser null.");
         }
@@ -35,7 +37,7 @@ public class TestScenarioApplier {
         }
     }
 
-    public int calculateRequiredBlocks(TestScenario scenario) {
+    public int calculateRequiredBlocks(JsonScenario scenario) {
         if (scenario == null) {
             throw new IllegalArgumentException("El escenario no puede ser null.");
         }
@@ -54,11 +56,8 @@ public class TestScenarioApplier {
         try {
             fs.createDirectory("/", "system", "system");
         } catch (IllegalStateException e) {
-            if (fs.getRoot() == null || fs.getRoot().getSubdirectoryCount() == 0) {
-                throw e;
-            }
-
             boolean exists = false;
+
             for (int i = 0; i < fs.getRoot().getSubdirectories().length; i++) {
                 if ("system".equals(fs.getRoot().getSubdirectories()[i].getName())) {
                     exists = true;

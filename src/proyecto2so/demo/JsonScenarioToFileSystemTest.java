@@ -2,18 +2,17 @@ package proyecto2so.demo;
 
 import proyecto2so.core.FileNode;
 import proyecto2so.core.FileSystemService;
-import proyecto2so.json.TestScenario;
+import proyecto2so.core.JsonScenario;
+import proyecto2so.core.JsonScenarioLoader;
 import proyecto2so.json.TestScenarioApplier;
-import proyecto2so.json.TestScenarioLoader;
 
 public class JsonScenarioToFileSystemTest {
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         System.out.println("ENTRANDO A JsonScenarioToFileSystemTest");
 
         String jsonPath = "test_input.json";
 
-        TestScenarioLoader loader = new TestScenarioLoader();
-        TestScenario scenario = loader.load(jsonPath);
+        JsonScenario scenario = JsonScenarioLoader.loadFromFile(jsonPath);
 
         TestScenarioApplier applier = new TestScenarioApplier();
 

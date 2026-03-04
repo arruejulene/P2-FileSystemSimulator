@@ -132,4 +132,34 @@ public class VirtualDisk {
             block.release();
         }
     }
+    
+    public void occupyChainAt(int startPos, int blocks, String fileName) {
+    if (blocks <= 0) {
+        throw new IllegalArgumentException("blocks must be > 0");
+    }
+
+    if (startPos < 0 || startPos >= totalBlocks) {
+        throw new IllegalArgumentException("startPos out of range");
+    }
+
+    if (startPos + blocks - 1 >= totalBlocks) {
+        throw new IllegalArgumentException("Chain exceeds disk size");
+    }
+
+    for (int i = 0; i < blocks; i++) {
+        Block b = getBlockById(startPos + i);
+
+        if (!b.isFree()) {
+            throw new IllegalStateException("Block " + (startPos + i) + " is not free");
+        }
+    }
+
+    for (int i = 0; i < blocks; i++) {
+        int id = startPos + i;
+        int next = (i == blocks - 1) ? -1 : (id + 1);
+
+        occupyBlock(id, fileName, next);
+    }
+}
+    
 }
