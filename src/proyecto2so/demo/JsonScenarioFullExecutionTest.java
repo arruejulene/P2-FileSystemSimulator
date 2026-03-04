@@ -14,7 +14,7 @@ public class JsonScenarioFullExecutionTest {
     public static void main(String[] args) throws Exception {
         System.out.println("ENTRANDO A JsonScenarioFullExecutionTest");
 
-        String path = "json/P1.json";
+        String path = "test_input.json";
 
         JsonScenario scenario = JsonScenarioLoader.loadFromFile(path);
 
@@ -40,10 +40,10 @@ public class JsonScenarioFullExecutionTest {
 
         assertFileExists(fs, "/system/boot_sect.bin");
         assertFileExists(fs, "/system/readme.txt");
-        assertFileExists(fs, "/system/script.py");
+        assertFileExists(fs, "/system/upd_script.py");
         assertFileExists(fs, "/system/style.css");
-        assertFileExists(fs, "/system/config.sys");
-        assertFileExists(fs, "/system/data_log.csv");
+        assertFileExists(fs, "/system/upd_config.sys");
+        assertFileExists(fs, "/system/upd_data_log.csv");
         assertFileExists(fs, "/system/video_clip.mp4");
 
         System.out.println("System_files creados correctamente.");

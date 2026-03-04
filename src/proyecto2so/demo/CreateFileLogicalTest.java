@@ -37,8 +37,14 @@ public class CreateFileLogicalTest {
             throw new RuntimeException("Error: el tamaño del archivo debería ser 3 bloques.");
         }
 
-        if (file.getFirstBlockId() != -1) {
-            throw new RuntimeException("Error: en esta fase lógica, firstBlockId debería ser -1.");
+        if (file.getFirstBlockId() < 0) {
+            throw new RuntimeException("Error: firstBlockId debería ser válido.");
+        }
+
+        int[] chain = fs.getDisk().traverseChain(file.getFirstBlockId());
+
+        if (chain.length != 3) {
+            throw new RuntimeException("Error: la cadena física del archivo debería tener 3 bloques.");
         }
 
         if (!"/usuarios/iraia/apunte.txt".equals(file.getPath())) {
@@ -77,8 +83,9 @@ public class CreateFileLogicalTest {
             throw new RuntimeException("Error: crear archivo en ruta inexistente debería fallar.");
         }
 
-        System.out.println("Creación lógica de archivo correcta.");
+        System.out.println("Creación de archivo correcta.");
         System.out.println("Metadata del archivo correcta.");
+        System.out.println("Cadena física del archivo correcta.");
         System.out.println("Índice global actualizado correctamente.");
         System.out.println("Validaciones de tamaño y ruta correctas.");
         System.out.println("Paso 11 completado correctamente.");
