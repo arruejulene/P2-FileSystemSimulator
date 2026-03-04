@@ -372,4 +372,17 @@ public class FileSystemService {
     public int getFileCount() {
         return fileCount;
     }
+    
+    private SystemFileSeed findSystemFileByPos(SystemFileSeed[] seeds, int pos) {
+    for (int i = 0; i < seeds.length; i++) {
+        if (seeds[i].getPos() == pos) return seeds[i];
+    }
+    return null;
+    
+  
+
+    
+    
+}
+    
 }
