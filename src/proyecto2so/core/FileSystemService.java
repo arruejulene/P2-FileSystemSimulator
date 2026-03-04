@@ -50,9 +50,241 @@ public class FileSystemService {
             throw new IllegalStateException("La ruta padre no existe.");
         }
 
-        FileNode newFile = new FileNode(fileName, owner, parentDirectory, sizeInBlocks, -1);
+        int[] allocatedBlocks = disk.findFreeBlocks(sizeInBlocks);
+
+        for (int i = 0; i < allocatedBlocks.length; i++) {
+            int nextBlockId = (i == allocatedBlocks.length - 1) ? -1 : allocatedBlocks[i + 1];
+            disk.occupyBlock(allocatedBlocks[i], fileName, nextBlockId);
+        }
+
+        FileNode newFile = new FileNode(fileName, owner, parentDirectory, sizeInBlocks, allocatedBlocks[0]);
         parentDirectory.addFile(newFile);
         addToFileIndex(newFile);
+    }
+
+    public FileNode getFileByPath(String filePath) {
+        if (filePath == null || filePath.trim().isEmpty()) {
+            throw new IllegalArgumentException("La ruta del archivo no puede ser nula o vacía.");
+        }
+
+        if (!filePath.startsWith("/")) {
+            throw new IllegalArgumentException("La ruta debe empezar con '/'.");
+        }
+
+        if ("/".equals(filePath)) {
+            return null;
+        }
+
+        int lastSlash = filePath.lastIndexOf('/');
+
+        String parentPath;
+        String fileName;
+
+        if (lastSlash == 0) {
+            parentPath = "/";
+            fileName = filePath.substring(1);
+        } else {
+            parentPath = filePath.substring(0, lastSlash);
+            fileName = filePath.substring(lastSlash + 1);
+        }
+
+        if (fileName == null || fileName.trim().isEmpty()) {
+            throw new IllegalArgumentException("La ruta del archivo no es válida.");
+        }
+
+        DirectoryNode parentDirectory = resolveDirectory(parentPath);
+
+        if (parentDirectory == null) {
+            return null;
+        }
+
+        FileNode[] files = parentDirectory.getFiles();
+
+        for (int i = 0; i < files.length; i++) {
+            if (files[i].getName().equals(fileName)) {
+                return files[i];
+            }
+        }
+
+        return null;
+    }
+
+    public int[] getFileBlockChain(String filePath) {
+        FileNode file = getFileByPath(filePath);
+
+        if (file == null) {
+            throw new IllegalStateException("El archivo no existe.");
+        }
+
+        if (file.getFirstBlockId() < 0) {
+            throw new IllegalStateException("El archivo no tiene bloques asignados.");
+        }
+
+        return disk.traverseChain(file.getFirstBlockId());
+    }
+
+    public void deleteFile(String filePath) {
+        if (root == null || disk == null) {
+            throw new IllegalStateException("El sistema de archivos no ha sido inicializado.");
+        }
+
+        FileNode file = getFileByPath(filePath);
+
+        if (file == null) {
+            throw new IllegalStateException("El archivo no existe.");
+        }
+
+        if (file.getFirstBlockId() >= 0) {
+            disk.freeChain(file.getFirstBlockId());
+        }
+
+        DirectoryNode parent = file.getParent();
+
+        if (parent == null) {
+            throw new IllegalStateException("El archivo no tiene directorio padre.");
+        }
+
+        parent.removeFileByName(file.getName());
+        removeFromFileIndex(file);
+    }
+
+    public void deleteDirectoryRecursive(String directoryPath) {
+        if (root == null || disk == null) {
+            throw new IllegalStateException("El sistema de archivos no ha sido inicializado.");
+        }
+
+        if ("/".equals(directoryPath)) {
+            throw new IllegalStateException("No se puede eliminar el directorio raíz.");
+        }
+
+        DirectoryNode target = resolveDirectory(directoryPath);
+
+        if (target == null) {
+            throw new IllegalStateException("El directorio no existe.");
+        }
+
+        deleteDirectoryContents(target);
+
+        DirectoryNode parent = target.getParent();
+
+        if (parent == null) {
+            throw new IllegalStateException("El directorio no tiene padre.");
+        }
+
+        parent.removeSubdirectoryByName(target.getName());
+    }
+
+    public void renameFile(String filePath, String newName) {
+        if (root == null || disk == null) {
+            throw new IllegalStateException("El sistema de archivos no ha sido inicializado.");
+        }
+
+        if (newName == null || newName.trim().isEmpty()) {
+            throw new IllegalArgumentException("El nuevo nombre no puede ser nulo o vacío.");
+        }
+
+        FileNode file = getFileByPath(filePath);
+
+        if (file == null) {
+            throw new IllegalStateException("El archivo no existe.");
+        }
+
+        DirectoryNode parent = file.getParent();
+
+        if (parent == null) {
+            throw new IllegalStateException("El archivo no tiene directorio padre.");
+        }
+
+        if (!file.getName().equals(newName) && parent.containsName(newName)) {
+            throw new IllegalStateException("Ya existe un nodo con ese nombre en el directorio padre.");
+        }
+
+        file.setName(newName);
+    }
+
+    public void renameDirectory(String directoryPath, String newName) {
+        if (root == null || disk == null) {
+            throw new IllegalStateException("El sistema de archivos no ha sido inicializado.");
+        }
+
+        if (newName == null || newName.trim().isEmpty()) {
+            throw new IllegalArgumentException("El nuevo nombre no puede ser nulo o vacío.");
+        }
+
+        if ("/".equals(directoryPath)) {
+            throw new IllegalStateException("No se puede renombrar la raíz.");
+        }
+
+        DirectoryNode directory = resolveDirectory(directoryPath);
+
+        if (directory == null) {
+            throw new IllegalStateException("El directorio no existe.");
+        }
+
+        DirectoryNode parent = directory.getParent();
+
+        if (parent == null) {
+            throw new IllegalStateException("El directorio no tiene padre.");
+        }
+
+        if (!directory.getName().equals(newName) && parent.containsName(newName)) {
+            throw new IllegalStateException("Ya existe un nodo con ese nombre en el directorio padre.");
+        }
+
+        directory.setName(newName);
+    }
+
+    public AllocationEntry[] getAllocationTable() {
+        AllocationEntry[] table = new AllocationEntry[fileCount];
+
+        for (int i = 0; i < fileCount; i++) {
+            FileNode file = fileIndex[i];
+            table[i] = new AllocationEntry(
+                    file.getName(),
+                    file.getSizeInBlocks(),
+                    file.getFirstBlockId()
+            );
+        }
+
+        return table;
+    }
+
+    private void deleteDirectoryContents(DirectoryNode directory) {
+        FileNode[] files = directory.getFiles();
+
+        while (files.length > 0) {
+            deleteFile(files[0].getPath());
+            files = directory.getFiles();
+        }
+
+        DirectoryNode[] subdirs = directory.getSubdirectories();
+
+        while (subdirs.length > 0) {
+            deleteDirectoryRecursive(subdirs[0].getPath());
+            subdirs = directory.getSubdirectories();
+        }
+    }
+
+    private void removeFromFileIndex(FileNode file) {
+        int foundIndex = -1;
+
+        for (int i = 0; i < fileCount; i++) {
+            if (fileIndex[i] == file) {
+                foundIndex = i;
+                break;
+            }
+        }
+
+        if (foundIndex == -1) {
+            throw new IllegalStateException("El archivo no existe en el índice global.");
+        }
+
+        for (int i = foundIndex; i < fileCount - 1; i++) {
+            fileIndex[i] = fileIndex[i + 1];
+        }
+
+        fileIndex[fileCount - 1] = null;
+        fileCount--;
     }
 
     private void addToFileIndex(FileNode file) {
