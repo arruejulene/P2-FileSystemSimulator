@@ -62,6 +62,67 @@ public class FileSystemService {
         addToFileIndex(newFile);
     }
 
+    public FileNode getFileByPath(String filePath) {
+        if (filePath == null || filePath.trim().isEmpty()) {
+            throw new IllegalArgumentException("La ruta del archivo no puede ser nula o vacía.");
+        }
+
+        if (!filePath.startsWith("/")) {
+            throw new IllegalArgumentException("La ruta debe empezar con '/'.");
+        }
+
+        if ("/".equals(filePath)) {
+            return null;
+        }
+
+        int lastSlash = filePath.lastIndexOf('/');
+
+        String parentPath;
+        String fileName;
+
+        if (lastSlash == 0) {
+            parentPath = "/";
+            fileName = filePath.substring(1);
+        } else {
+            parentPath = filePath.substring(0, lastSlash);
+            fileName = filePath.substring(lastSlash + 1);
+        }
+
+        if (fileName == null || fileName.trim().isEmpty()) {
+            throw new IllegalArgumentException("La ruta del archivo no es válida.");
+        }
+
+        DirectoryNode parentDirectory = resolveDirectory(parentPath);
+
+        if (parentDirectory == null) {
+            return null;
+        }
+
+        FileNode[] files = parentDirectory.getFiles();
+
+        for (int i = 0; i < files.length; i++) {
+            if (files[i].getName().equals(fileName)) {
+                return files[i];
+            }
+        }
+
+        return null;
+    }
+
+    public int[] getFileBlockChain(String filePath) {
+        FileNode file = getFileByPath(filePath);
+
+        if (file == null) {
+            throw new IllegalStateException("El archivo no existe.");
+        }
+
+        if (file.getFirstBlockId() < 0) {
+            throw new IllegalStateException("El archivo no tiene bloques asignados.");
+        }
+
+        return disk.traverseChain(file.getFirstBlockId());
+    }
+
     private void addToFileIndex(FileNode file) {
         if (fileCount >= fileIndex.length) {
             FileNode[] newArray = new FileNode[fileIndex.length * 2];
