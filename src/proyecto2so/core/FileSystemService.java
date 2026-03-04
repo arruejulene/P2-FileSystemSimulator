@@ -1,10 +1,5 @@
 package proyecto2so.core;
 
-import java.io.BufferedReader;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
-
 public class FileSystemService {
     private DirectoryNode root;
     private VirtualDisk disk;
@@ -26,7 +21,9 @@ public class FileSystemService {
     }
 
     public void createDirectory(String parentPath, String directoryName, String owner) {
-        ensureInitialized();
+        if (root == null || disk == null) {
+            throw new IllegalStateException("El sistema de archivos no ha sido inicializado.");
+        }
 
         DirectoryNode parentDirectory = resolveDirectory(parentPath);
 
@@ -39,7 +36,9 @@ public class FileSystemService {
     }
 
     public void createFile(String parentPath, String fileName, String owner, int sizeInBlocks) {
-        ensureInitialized();
+        if (root == null || disk == null) {
+            throw new IllegalStateException("El sistema de archivos no ha sido inicializado.");
+        }
 
         if (sizeInBlocks <= 0) {
             throw new IllegalArgumentException("El tamaño en bloques debe ser mayor que 0.");
@@ -125,7 +124,9 @@ public class FileSystemService {
     }
 
     public void deleteFile(String filePath) {
-        ensureInitialized();
+        if (root == null || disk == null) {
+            throw new IllegalStateException("El sistema de archivos no ha sido inicializado.");
+        }
 
         FileNode file = getFileByPath(filePath);
 
@@ -148,7 +149,9 @@ public class FileSystemService {
     }
 
     public void deleteDirectoryRecursive(String directoryPath) {
-        ensureInitialized();
+        if (root == null || disk == null) {
+            throw new IllegalStateException("El sistema de archivos no ha sido inicializado.");
+        }
 
         if ("/".equals(directoryPath)) {
             throw new IllegalStateException("No se puede eliminar el directorio raíz.");
@@ -172,7 +175,9 @@ public class FileSystemService {
     }
 
     public void renameFile(String filePath, String newName) {
-        ensureInitialized();
+        if (root == null || disk == null) {
+            throw new IllegalStateException("El sistema de archivos no ha sido inicializado.");
+        }
 
         if (newName == null || newName.trim().isEmpty()) {
             throw new IllegalArgumentException("El nuevo nombre no puede ser nulo o vacío.");
@@ -198,7 +203,9 @@ public class FileSystemService {
     }
 
     public void renameDirectory(String directoryPath, String newName) {
-        ensureInitialized();
+        if (root == null || disk == null) {
+            throw new IllegalStateException("El sistema de archivos no ha sido inicializado.");
+        }
 
         if (newName == null || newName.trim().isEmpty()) {
             throw new IllegalArgumentException("El nuevo nombre no puede ser nulo o vacío.");
@@ -232,200 +239,14 @@ public class FileSystemService {
 
         for (int i = 0; i < fileCount; i++) {
             FileNode file = fileIndex[i];
-            table[i] = new AllocationEntry(file.getName(), file.getSizeInBlocks(), file.getFirstBlockId());
+            table[i] = new AllocationEntry(
+                    file.getName(),
+                    file.getSizeInBlocks(),
+                    file.getFirstBlockId()
+            );
         }
 
         return table;
-    }
-
-    public void saveToJson(String filePath) {
-        ensureInitialized();
-
-        if (filePath == null || filePath.trim().isEmpty()) {
-            throw new IllegalArgumentException("La ruta de guardado no puede ser nula o vacía.");
-        }
-
-        StringBuilder json = new StringBuilder();
-
-        json.append("{\n");
-        json.append("  \"totalBlocks\": ").append(disk.getTotalBlocks()).append(",\n");
-        json.append("  \"directories\": [\n");
-        appendDirectoriesJson(root, json, new boolean[]{true});
-        json.append("  ],\n");
-        json.append("  \"files\": [\n");
-        appendFilesJson(json);
-        json.append("  ],\n");
-        json.append("  \"blocks\": [\n");
-        appendBlocksJson(json);
-        json.append("  ]\n");
-        json.append("}\n");
-
-        writeTextFile(filePath, json.toString());
-    }
-
-    public void loadFromJson(String filePath) {
-        if (filePath == null || filePath.trim().isEmpty()) {
-            throw new IllegalArgumentException("La ruta de carga no puede ser nula o vacía.");
-        }
-
-        String json = readTextFile(filePath);
-
-        try {
-            int totalBlocks = extractIntValue(json, "totalBlocks");
-            initialize(totalBlocks);
-
-            String directoriesSection = extractArraySection(json, "directories");
-            String filesSection = extractArraySection(json, "files");
-            String blocksSection = extractArraySection(json, "blocks");
-
-            String[] directoryObjects = splitObjects(directoriesSection);
-            for (int i = 0; i < directoryObjects.length; i++) {
-                String path = extractStringValue(directoryObjects[i], "path");
-                String owner = extractStringValue(directoryObjects[i], "owner");
-                createDirectoryByFullPath(path, owner);
-            }
-
-            String[] blockObjects = splitObjects(blocksSection);
-            for (int i = 0; i < blockObjects.length; i++) {
-                int id = extractIntValue(blockObjects[i], "id");
-                boolean free = extractBooleanValue(blockObjects[i], "free");
-
-                if (!free) {
-                    String fileName = extractNullableStringValue(blockObjects[i], "fileName");
-                    int nextBlockId = extractIntValue(blockObjects[i], "nextBlockId");
-                    disk.occupyBlock(id, fileName, nextBlockId);
-                }
-            }
-
-            String[] fileObjects = splitObjects(filesSection);
-            for (int i = 0; i < fileObjects.length; i++) {
-                String path = extractStringValue(fileObjects[i], "path");
-                String owner = extractStringValue(fileObjects[i], "owner");
-                int sizeInBlocks = extractIntValue(fileObjects[i], "sizeInBlocks");
-                int firstBlockId = extractIntValue(fileObjects[i], "firstBlockId");
-                createFileNodeOnly(path, owner, sizeInBlocks, firstBlockId);
-            }
-        } catch (RuntimeException e) {
-            throw new IllegalStateException("JSON inválido o estado inconsistente.");
-        }
-    }
-
-    private void createDirectoryByFullPath(String fullPath, String owner) {
-        if (fullPath == null || fullPath.trim().isEmpty() || "/".equals(fullPath)) {
-            return;
-        }
-
-        int lastSlash = fullPath.lastIndexOf('/');
-        String parentPath;
-        String directoryName;
-
-        if (lastSlash == 0) {
-            parentPath = "/";
-            directoryName = fullPath.substring(1);
-        } else {
-            parentPath = fullPath.substring(0, lastSlash);
-            directoryName = fullPath.substring(lastSlash + 1);
-        }
-
-        createDirectory(parentPath, directoryName, owner);
-    }
-
-    private void createFileNodeOnly(String fullPath, String owner, int sizeInBlocks, int firstBlockId) {
-        int lastSlash = fullPath.lastIndexOf('/');
-
-        String parentPath;
-        String fileName;
-
-        if (lastSlash == 0) {
-            parentPath = "/";
-            fileName = fullPath.substring(1);
-        } else {
-            parentPath = fullPath.substring(0, lastSlash);
-            fileName = fullPath.substring(lastSlash + 1);
-        }
-
-        DirectoryNode parentDirectory = resolveDirectory(parentPath);
-
-        if (parentDirectory == null) {
-            throw new IllegalStateException("La ruta padre no existe al reconstruir archivo.");
-        }
-
-        FileNode file = new FileNode(fileName, owner, parentDirectory, sizeInBlocks, firstBlockId);
-        parentDirectory.addFile(file);
-        addToFileIndex(file);
-    }
-
-    private void appendDirectoriesJson(DirectoryNode directory, StringBuilder json, boolean[] firstEntryRef) {
-        DirectoryNode[] subdirs = directory.getSubdirectories();
-
-        for (int i = 0; i < subdirs.length; i++) {
-            if (!firstEntryRef[0]) {
-                json.append(",\n");
-            }
-
-            json.append("    {\"path\":\"")
-                .append(escapeJson(subdirs[i].getPath()))
-                .append("\",\"owner\":\"")
-                .append(escapeJson(subdirs[i].getOwner()))
-                .append("\"}");
-
-            firstEntryRef[0] = false;
-            appendDirectoriesJson(subdirs[i], json, firstEntryRef);
-        }
-    }
-
-    private void appendFilesJson(StringBuilder json) {
-        for (int i = 0; i < fileCount; i++) {
-            if (i > 0) {
-                json.append(",\n");
-            }
-
-            FileNode file = fileIndex[i];
-
-            json.append("    {\"path\":\"")
-                .append(escapeJson(file.getPath()))
-                .append("\",\"owner\":\"")
-                .append(escapeJson(file.getOwner()))
-                .append("\",\"sizeInBlocks\":")
-                .append(file.getSizeInBlocks())
-                .append(",\"firstBlockId\":")
-                .append(file.getFirstBlockId())
-                .append("}");
-        }
-
-        if (fileCount > 0) {
-            json.append("\n");
-        }
-    }
-
-    private void appendBlocksJson(StringBuilder json) {
-        Block[] blocks = disk.getBlocks();
-
-        for (int i = 0; i < blocks.length; i++) {
-            if (i > 0) {
-                json.append(",\n");
-            }
-
-            json.append("    {\"id\":")
-                .append(blocks[i].getId())
-                .append(",\"free\":")
-                .append(blocks[i].isFree())
-                .append(",\"fileName\":");
-
-            if (blocks[i].getFileName() == null) {
-                json.append("null");
-            } else {
-                json.append("\"").append(escapeJson(blocks[i].getFileName())).append("\"");
-            }
-
-            json.append(",\"nextBlockId\":")
-                .append(blocks[i].getNextBlockId())
-                .append("}");
-        }
-
-        if (blocks.length > 0) {
-            json.append("\n");
-        }
     }
 
     private void deleteDirectoryContents(DirectoryNode directory) {
@@ -528,236 +349,6 @@ public class FileSystemService {
         }
 
         return null;
-    }
-
-    private void ensureInitialized() {
-        if (root == null || disk == null) {
-            throw new IllegalStateException("El sistema de archivos no ha sido inicializado.");
-        }
-    }
-
-    private void writeTextFile(String filePath, String content) {
-        try {
-            FileWriter writer = new FileWriter(filePath);
-            writer.write(content);
-            writer.close();
-        } catch (IOException e) {
-            throw new IllegalStateException("No se pudo guardar el archivo JSON.");
-        }
-    }
-
-    private String readTextFile(String filePath) {
-        try {
-            BufferedReader reader = new BufferedReader(new FileReader(filePath));
-            StringBuilder content = new StringBuilder();
-            String line = reader.readLine();
-
-            while (line != null) {
-                content.append(line).append("\n");
-                line = reader.readLine();
-            }
-
-            reader.close();
-            return content.toString();
-        } catch (IOException e) {
-            throw new IllegalStateException("No se pudo leer el archivo JSON.");
-        }
-    }
-
-    private String extractArraySection(String json, String key) {
-        String token = "\"" + key + "\"";
-        int keyIndex = json.indexOf(token);
-
-        if (keyIndex < 0) {
-            throw new IllegalStateException("No se encontró la sección " + key + ".");
-        }
-
-        int start = json.indexOf('[', keyIndex);
-
-        if (start < 0) {
-            throw new IllegalStateException("No se encontró el inicio de array para " + key + ".");
-        }
-
-        int depth = 0;
-
-        for (int i = start; i < json.length(); i++) {
-            char c = json.charAt(i);
-
-            if (c == '[') {
-                depth++;
-            } else if (c == ']') {
-                depth--;
-
-                if (depth == 0) {
-                    return json.substring(start + 1, i);
-                }
-            }
-        }
-
-        throw new IllegalStateException("No se encontró el cierre de array para " + key + ".");
-    }
-
-    private String[] splitObjects(String arrayContent) {
-        String trimmed = arrayContent.trim();
-
-        if (trimmed.isEmpty()) {
-            return new String[0];
-        }
-
-        String[] temp = new String[10];
-        int count = 0;
-        int depth = 0;
-        int objectStart = -1;
-
-        for (int i = 0; i < arrayContent.length(); i++) {
-            char c = arrayContent.charAt(i);
-
-            if (c == '{') {
-                if (depth == 0) {
-                    objectStart = i;
-                }
-                depth++;
-            } else if (c == '}') {
-                depth--;
-
-                if (depth == 0 && objectStart >= 0) {
-                    if (count >= temp.length) {
-                        String[] newArray = new String[temp.length * 2];
-                        for (int j = 0; j < temp.length; j++) {
-                            newArray[j] = temp[j];
-                        }
-                        temp = newArray;
-                    }
-
-                    temp[count] = arrayContent.substring(objectStart, i + 1);
-                    count++;
-                    objectStart = -1;
-                }
-            }
-        }
-
-        String[] result = new String[count];
-        for (int i = 0; i < count; i++) {
-            result[i] = temp[i];
-        }
-
-        return result;
-    }
-
-    private int extractIntValue(String json, String key) {
-        String raw = extractRawValue(json, key);
-        return Integer.parseInt(raw);
-    }
-
-    private boolean extractBooleanValue(String json, String key) {
-        String raw = extractRawValue(json, key);
-        return "true".equals(raw);
-    }
-
-    private String extractStringValue(String json, String key) {
-        String raw = extractRawValue(json, key);
-
-        if ("null".equals(raw)) {
-            throw new IllegalStateException("El valor " + key + " no puede ser null.");
-        }
-
-        if (raw.length() < 2 || raw.charAt(0) != '"' || raw.charAt(raw.length() - 1) != '"') {
-            throw new IllegalStateException("El valor " + key + " no es un string válido.");
-        }
-
-        return unescapeJson(raw.substring(1, raw.length() - 1));
-    }
-
-    private String extractNullableStringValue(String json, String key) {
-        String raw = extractRawValue(json, key);
-
-        if ("null".equals(raw)) {
-            return null;
-        }
-
-        if (raw.length() < 2 || raw.charAt(0) != '"' || raw.charAt(raw.length() - 1) != '"') {
-            throw new IllegalStateException("El valor " + key + " no es un string válido.");
-        }
-
-        return unescapeJson(raw.substring(1, raw.length() - 1));
-    }
-
-    private String extractRawValue(String json, String key) {
-        String token = "\"" + key + "\"";
-        int keyIndex = json.indexOf(token);
-
-        if (keyIndex < 0) {
-            throw new IllegalStateException("No se encontró la llave " + key + ".");
-        }
-
-        int colonIndex = json.indexOf(':', keyIndex);
-
-        if (colonIndex < 0) {
-            throw new IllegalStateException("No se encontró el separador para " + key + ".");
-        }
-
-        int index = colonIndex + 1;
-
-        while (index < json.length() && Character.isWhitespace(json.charAt(index))) {
-            index++;
-        }
-
-        if (index >= json.length()) {
-            throw new IllegalStateException("No hay valor para " + key + ".");
-        }
-
-        if (json.charAt(index) == '"') {
-            StringBuilder value = new StringBuilder();
-            value.append('"');
-            index++;
-
-            boolean escaped = false;
-
-            while (index < json.length()) {
-                char c = json.charAt(index);
-                value.append(c);
-
-                if (c == '"' && !escaped) {
-                    break;
-                }
-
-                if (c == '\\' && !escaped) {
-                    escaped = true;
-                } else {
-                    escaped = false;
-                }
-
-                index++;
-            }
-
-            return value.toString();
-        }
-
-        int end = index;
-
-        while (end < json.length()) {
-            char c = json.charAt(end);
-
-            if (c == ',' || c == '}' || c == ']' || Character.isWhitespace(c)) {
-                break;
-            }
-
-            end++;
-        }
-
-        return json.substring(index, end).trim();
-    }
-
-    private String escapeJson(String value) {
-        String escaped = value.replace("\\", "\\\\");
-        escaped = escaped.replace("\"", "\\\"");
-        return escaped;
-    }
-
-    private String unescapeJson(String value) {
-        String unescaped = value.replace("\\\"", "\"");
-        unescaped = unescaped.replace("\\\\", "\\");
-        return unescaped;
     }
 
     public DirectoryNode getRoot() {
