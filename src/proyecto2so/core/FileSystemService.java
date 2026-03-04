@@ -148,6 +148,48 @@ public class FileSystemService {
         removeFromFileIndex(file);
     }
 
+    public void deleteDirectoryRecursive(String directoryPath) {
+        if (root == null || disk == null) {
+            throw new IllegalStateException("El sistema de archivos no ha sido inicializado.");
+        }
+
+        if ("/".equals(directoryPath)) {
+            throw new IllegalStateException("No se puede eliminar el directorio raíz.");
+        }
+
+        DirectoryNode target = resolveDirectory(directoryPath);
+
+        if (target == null) {
+            throw new IllegalStateException("El directorio no existe.");
+        }
+
+        deleteDirectoryContents(target);
+
+        DirectoryNode parent = target.getParent();
+
+        if (parent == null) {
+            throw new IllegalStateException("El directorio no tiene padre.");
+        }
+
+        parent.removeSubdirectoryByName(target.getName());
+    }
+
+    private void deleteDirectoryContents(DirectoryNode directory) {
+        FileNode[] files = directory.getFiles();
+
+        while (files.length > 0) {
+            deleteFile(files[0].getPath());
+            files = directory.getFiles();
+        }
+
+        DirectoryNode[] subdirs = directory.getSubdirectories();
+
+        while (subdirs.length > 0) {
+            deleteDirectoryRecursive(subdirs[0].getPath());
+            subdirs = directory.getSubdirectories();
+        }
+    }
+
     private void removeFromFileIndex(FileNode file) {
         int foundIndex = -1;
 

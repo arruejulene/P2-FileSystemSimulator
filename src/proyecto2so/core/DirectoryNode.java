@@ -70,6 +70,32 @@ public class DirectoryNode extends FSNode {
         fileCount--;
     }
 
+    public void removeSubdirectoryByName(String directoryName) {
+        if (directoryName == null || directoryName.trim().isEmpty()) {
+            throw new IllegalArgumentException("El nombre del directorio no puede ser nulo o vacío.");
+        }
+
+        int foundIndex = -1;
+
+        for (int i = 0; i < subdirectoryCount; i++) {
+            if (subdirectories[i].getName().equals(directoryName)) {
+                foundIndex = i;
+                break;
+            }
+        }
+
+        if (foundIndex == -1) {
+            throw new IllegalStateException("El subdirectorio no existe en este directorio.");
+        }
+
+        for (int i = foundIndex; i < subdirectoryCount - 1; i++) {
+            subdirectories[i] = subdirectories[i + 1];
+        }
+
+        subdirectories[subdirectoryCount - 1] = null;
+        subdirectoryCount--;
+    }
+
     public boolean containsName(String name) {
         if (name == null || name.trim().isEmpty()) {
             throw new IllegalArgumentException("El nombre no puede ser nulo o vacío.");
