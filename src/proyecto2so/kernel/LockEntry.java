@@ -13,7 +13,7 @@ package proyecto2so.kernel;
 class LockEntry {
     final String resource;
     int sharedCount;
-    int exclusiveOwnerPid; // -1 si no hay
+    int exclusiveOwnerPid; 
 
     LockEntry(String resource) {
         this.resource = resource;
