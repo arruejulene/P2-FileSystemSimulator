@@ -9,23 +9,21 @@ package proyecto2so.kernel;
  * @author ani
  */
 
+
 import proyecto2so.core.Request;
 import proyecto2so.core.RequestOp;
 
 public class ProcessControlBlock {
     private final int pid;
     private final String user;
-
     private ProcessState state;
-
     private final Request request;
+    private final String resourcePath;
+    private final LockType neededLock;
+    private String blockedReason;
 
     
-    private final String resourcePath;
-
-    private final LockType neededLock;
-
-    private String blockedReason;
+    private int remainingTicks;
 
     public ProcessControlBlock(int pid, String user, Request request, String resourcePath) {
         if (pid <= 0) throw new IllegalArgumentException("pid debe ser > 0");
@@ -37,16 +35,22 @@ public class ProcessControlBlock {
         this.user = user;
         this.request = request;
         this.resourcePath = resourcePath;
-
         this.neededLock = lockFromOp(request.getOp());
         this.state = ProcessState.NEW;
         this.blockedReason = null;
+        this.remainingTicks = defaultTicksFor(request.getOp());
     }
 
     private LockType lockFromOp(RequestOp op) {
         if (op == RequestOp.READ) return LockType.SHARED;
-        
         return LockType.EXCLUSIVE;
+    }
+
+    private int defaultTicksFor(RequestOp op) {
+        if (op == RequestOp.READ) return 2;
+        if (op == RequestOp.UPDATE) return 3;
+        if (op == RequestOp.DELETE) return 2;
+        return 2;
     }
 
     public int getPid() { return pid; }
@@ -56,10 +60,32 @@ public class ProcessControlBlock {
     public void setState(ProcessState state) { this.state = state; }
 
     public Request getRequest() { return request; }
-
     public String getResourcePath() { return resourcePath; }
     public LockType getNeededLock() { return neededLock; }
 
     public String getBlockedReason() { return blockedReason; }
     public void setBlockedReason(String blockedReason) { this.blockedReason = blockedReason; }
+
+    public int getRemainingTicks() { return remainingTicks; }
+    public void setRemainingTicks(int remainingTicks) { this.remainingTicks = remainingTicks; }
+
+    public void consumeTick() {
+        if (remainingTicks > 0) remainingTicks--;
+    }
+
+    public boolean isFinishedExecution() {
+        return remainingTicks <= 0;
+    }
+
+    @Override
+    public String toString() {
+        return "PCB{pid=" + pid
+                + ", user='" + user + '\''
+                + ", state=" + state
+                + ", op=" + request.getOp()
+                + ", pos=" + request.getPos()
+                + ", resource='" + resourcePath + '\''
+                + ", ticks=" + remainingTicks
+                + '}';
+    }
 }
