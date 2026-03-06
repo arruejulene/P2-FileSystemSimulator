@@ -103,11 +103,7 @@ public class IOEngine {
         }
     }
 
-    /**
-     * Intenta iniciar tantos procesos como sea posible en este tick.
-     * Los READ con SHARED pueden coexistir.
-     * Los WRITE con EXCLUSIVE se bloquean si hay lectores/escritor.
-     */
+    
     private void tryStartProcesses() {
         boolean startedSomething = true;
 
@@ -143,10 +139,7 @@ public class IOEngine {
         }
     }
 
-    /**
-     * Avanza un tick de todos los procesos en RUNNING.
-     * Cuando terminan, ejecutan operación real y liberan lock.
-     */
+    
     private void advanceRunningProcesses() {
         boolean progressed = true;
 
