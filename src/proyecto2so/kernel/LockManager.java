@@ -94,4 +94,20 @@ public class LockManager {
 
         return found[0];
     }
+    
+    public boolean canAcquire(String resource, int pid, LockType type) {
+    LockEntry e = find(resource);
+
+    
+    if (e == null) return true;
+
+    if (type == LockType.SHARED) {
+       
+        return e.exclusiveOwnerPid == -1 || e.exclusiveOwnerPid == pid;
+    } else {
+        
+        if (e.exclusiveOwnerPid == pid) return true;
+        return e.exclusiveOwnerPid == -1 && e.sharedCount == 0;
+    }
+}
 }
