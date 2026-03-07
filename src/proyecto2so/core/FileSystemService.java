@@ -1,16 +1,26 @@
 package proyecto2so.core;
 
+import proyecto2so.journal.DeletedFileSnapshot;
+import proyecto2so.journal.JournalEntry;
+import proyecto2so.journal.JournalManager;
+import proyecto2so.journal.JournalOperation;
+import proyecto2so.journal.JournalStatus;
+
 public class FileSystemService {
     private DirectoryNode root;
     private VirtualDisk disk;
     private FileNode[] fileIndex;
     private int fileCount;
+    private final JournalManager journalManager;
+    private boolean journalingEnabled;
 
     public FileSystemService() {
         this.root = null;
         this.disk = null;
         this.fileIndex = new FileNode[10];
         this.fileCount = 0;
+        this.journalManager = new JournalManager();
+        this.journalingEnabled = true;
     }
 
     public void initialize(int totalBlocks) {
@@ -36,54 +46,20 @@ public class FileSystemService {
     }
 
     public void createFile(String parentPath, String fileName, String owner, int sizeInBlocks) {
-    if (root == null || disk == null) {
-        throw new IllegalStateException("El sistema de archivos no ha sido inicializado.");
-    }
+        ensureInitialized();
+        String fullPath = childPath(parentPath, fileName);
 
-    if (fileName == null || fileName.trim().isEmpty()) {
-        throw new IllegalArgumentException("El nombre del archivo no puede ser nulo o vacío.");
-    }
-
-    if (owner == null || owner.trim().isEmpty()) {
-        throw new IllegalArgumentException("El owner no puede ser nulo o vacío.");
-    }
-
-    if (sizeInBlocks <= 0) {
-        throw new IllegalArgumentException("El tamaño en bloques debe ser mayor que 0.");
-    }
-
-    DirectoryNode parentDirectory = resolveDirectory(parentPath);
-
-    if (parentDirectory == null) {
-        throw new IllegalStateException("La ruta padre no existe.");
-    }
-
-    if (parentDirectory.containsName(fileName)) {
-        throw new IllegalStateException("Ya existe un nodo con ese nombre en este directorio.");
-    }
-
-    int[] allocatedBlocks = disk.findFreeBlocks(sizeInBlocks);
-
-    try {
-        for (int i = 0; i < allocatedBlocks.length; i++) {
-            int nextBlockId = (i == allocatedBlocks.length - 1) ? -1 : allocatedBlocks[i + 1];
-            disk.occupyBlock(allocatedBlocks[i], fileName, nextBlockId);
+        if (!journalingEnabled) {
+            createFileInternal(parentPath, fileName, owner, sizeInBlocks);
+            return;
         }
 
-        FileNode newFile = new FileNode(fileName, owner, parentDirectory, sizeInBlocks, allocatedBlocks[0]);
-        parentDirectory.addFile(newFile);
-        addToFileIndex(newFile);
+        JournalEntry entry = journalManager.beginCreateFile(fullPath);
 
-    } catch (Exception ex) {
-        for (int i = 0; i < allocatedBlocks.length; i++) {
-            Block block = disk.getBlockById(allocatedBlocks[i]);
-            if (!block.isFree() && fileName.equals(block.getFileName())) {
-                block.release();
-            }
-        }
-        throw ex;
+        createFileInternal(parentPath, fileName, owner, sizeInBlocks);
+        journalManager.failIfCrashRequested();
+        journalManager.confirm(entry.getId());
     }
-}
 
     public FileNode getFileByPath(String filePath) {
         if (filePath == null || filePath.trim().isEmpty()) {
@@ -147,9 +123,7 @@ public class FileSystemService {
     }
 
     public void deleteFile(String filePath) {
-        if (root == null || disk == null) {
-            throw new IllegalStateException("El sistema de archivos no ha sido inicializado.");
-        }
+        ensureInitialized();
 
         FileNode file = getFileByPath(filePath);
 
@@ -157,18 +131,17 @@ public class FileSystemService {
             throw new IllegalStateException("El archivo no existe.");
         }
 
-        if (file.getFirstBlockId() >= 0) {
-            disk.freeChain(file.getFirstBlockId());
+        if (!journalingEnabled) {
+            deleteFileInternal(file);
+            return;
         }
 
-        DirectoryNode parent = file.getParent();
+        DeletedFileSnapshot snapshot = buildDeletedFileSnapshot(file, filePath);
+        JournalEntry entry = journalManager.beginDeleteFile(filePath, snapshot);
 
-        if (parent == null) {
-            throw new IllegalStateException("El archivo no tiene directorio padre.");
-        }
-
-        parent.removeFileByName(file.getName());
-        removeFromFileIndex(file);
+        deleteFileInternal(file);
+        journalManager.failIfCrashRequested();
+        journalManager.confirm(entry.getId());
     }
 
     public void deleteDirectoryRecursive(String directoryPath) {
@@ -198,31 +171,24 @@ public class FileSystemService {
     }
 
     public void renameFile(String filePath, String newName) {
-        if (root == null || disk == null) {
-            throw new IllegalStateException("El sistema de archivos no ha sido inicializado.");
-        }
+        ensureInitialized();
 
         if (newName == null || newName.trim().isEmpty()) {
             throw new IllegalArgumentException("El nuevo nombre no puede ser nulo o vacío.");
         }
 
-        FileNode file = getFileByPath(filePath);
+        String parentPath = parentPathFromFilePath(filePath);
+        String newPath = childPath(parentPath, newName);
 
-        if (file == null) {
-            throw new IllegalStateException("El archivo no existe.");
+        if (!journalingEnabled) {
+            renameFileInternal(filePath, newName);
+            return;
         }
 
-        DirectoryNode parent = file.getParent();
-
-        if (parent == null) {
-            throw new IllegalStateException("El archivo no tiene directorio padre.");
-        }
-
-        if (!file.getName().equals(newName) && parent.containsName(newName)) {
-            throw new IllegalStateException("Ya existe un nodo con ese nombre en el directorio padre.");
-        }
-
-        file.setName(newName);
+        JournalEntry entry = journalManager.beginRenameFile(filePath, newPath);
+        renameFileInternal(filePath, newName);
+        journalManager.failIfCrashRequested();
+        journalManager.confirm(entry.getId());
     }
 
     public void renameDirectory(String directoryPath, String newName) {
@@ -276,7 +242,7 @@ public class FileSystemService {
         FileNode[] files = directory.getFiles();
 
         while (files.length > 0) {
-            deleteFile(files[0].getPath());
+            deleteFileInternal(files[0]);
             files = directory.getFiles();
         }
 
@@ -395,17 +361,280 @@ public class FileSystemService {
     public int getFileCount() {
         return fileCount;
     }
-    
-    private SystemFileSeed findSystemFileByPos(SystemFileSeed[] seeds, int pos) {
-    for (int i = 0; i < seeds.length; i++) {
-        if (seeds[i].getPos() == pos) return seeds[i];
-    }
-    return null;
-    
-  
 
-    
-    
-}
-    
+    public JournalEntry[] getJournalEntries() {
+        return journalManager.getEntries();
+    }
+
+    public void simulateCrashAfterNextCriticalOperation() {
+        journalManager.simulateCrashAfterNextApply();
+    }
+
+    public int recoverPendingJournalEntries() {
+        JournalEntry[] entries = journalManager.getEntries();
+        int undone = 0;
+
+        boolean previousJournalingEnabled = journalingEnabled;
+        journalingEnabled = false;
+
+        try {
+            for (int i = entries.length - 1; i >= 0; i--) {
+                JournalEntry entry = entries[i];
+
+                if (entry.getStatus() != JournalStatus.PENDING) {
+                    continue;
+                }
+
+                undoPendingEntry(entry);
+                journalManager.confirm(entry.getId());
+                undone++;
+            }
+        } finally {
+            journalingEnabled = previousJournalingEnabled;
+        }
+
+        return undone;
+    }
+
+    private void undoPendingEntry(JournalEntry entry) {
+        if (entry.getOperation() == JournalOperation.CREATE_FILE) {
+            FileNode created = getFileByPath(entry.getPrimaryPath());
+            if (created != null) {
+                deleteFileInternal(created);
+            }
+            return;
+        }
+
+        if (entry.getOperation() == JournalOperation.DELETE_FILE) {
+            if (getFileByPath(entry.getPrimaryPath()) == null) {
+                restoreDeletedFile(entry.getDeletedFileSnapshot());
+            }
+            return;
+        }
+
+        if (entry.getOperation() == JournalOperation.RENAME_FILE) {
+            String oldPath = entry.getPrimaryPath();
+            String newPath = entry.getSecondaryPath();
+
+            FileNode oldNode = getFileByPath(oldPath);
+            if (oldNode != null) {
+                return;
+            }
+
+            FileNode renamedNode = getFileByPath(newPath);
+            if (renamedNode == null) {
+                return;
+            }
+
+            renameFileInternal(newPath, fileNameFromPath(oldPath));
+        }
+    }
+
+    private void restoreDeletedFile(DeletedFileSnapshot snapshot) {
+        if (snapshot == null) {
+            throw new IllegalStateException("No hay snapshot para restaurar archivo eliminado.");
+        }
+
+        if (getFileByPath(snapshot.getFullPath()) != null) {
+            return;
+        }
+
+        DirectoryNode parent = resolveDirectory(snapshot.getParentPath());
+
+        if (parent == null) {
+            throw new IllegalStateException("No existe el directorio padre para restaurar " + snapshot.getFullPath() + ".");
+        }
+
+        if (parent.containsName(snapshot.getFileName())) {
+            throw new IllegalStateException("Ya existe un nodo con ese nombre al restaurar " + snapshot.getFullPath() + ".");
+        }
+
+        int[] chain = snapshot.getChainBlockIds();
+        if (chain.length != snapshot.getSizeInBlocks()) {
+            throw new IllegalStateException("Snapshot inválido: tamaño y cadena no coinciden para " + snapshot.getFullPath() + ".");
+        }
+
+        for (int i = 0; i < chain.length; i++) {
+            Block b = disk.getBlockById(chain[i]);
+            if (!b.isFree()) {
+                throw new IllegalStateException("No se puede restaurar; bloque ocupado: " + chain[i] + ".");
+            }
+        }
+
+        for (int i = 0; i < chain.length; i++) {
+            int next = (i == chain.length - 1) ? -1 : chain[i + 1];
+            disk.occupyBlock(chain[i], snapshot.getFileName(), next);
+        }
+
+        FileNode restored = new FileNode(
+                snapshot.getFileName(),
+                snapshot.getOwner(),
+                parent,
+                snapshot.getSizeInBlocks(),
+                chain[0]
+        );
+
+        parent.addFile(restored);
+        addToFileIndex(restored);
+    }
+
+    private DeletedFileSnapshot buildDeletedFileSnapshot(FileNode file, String fullPath) {
+        if (file == null) {
+            throw new IllegalArgumentException("file no puede ser null.");
+        }
+
+        if (fullPath == null || fullPath.trim().isEmpty()) {
+            throw new IllegalArgumentException("fullPath no puede ser nulo o vacío.");
+        }
+
+        if (file.getFirstBlockId() < 0) {
+            throw new IllegalStateException("El archivo no tiene bloques asignados.");
+        }
+
+        int[] chain = disk.traverseChain(file.getFirstBlockId());
+        String parentPath = parentPathFromFilePath(fullPath);
+
+        return new DeletedFileSnapshot(
+                fullPath,
+                parentPath,
+                file.getName(),
+                file.getOwner(),
+                file.getSizeInBlocks(),
+                chain
+        );
+    }
+
+    private void deleteFileInternal(FileNode file) {
+        if (file.getFirstBlockId() >= 0) {
+            disk.freeChain(file.getFirstBlockId());
+        }
+
+        DirectoryNode parent = file.getParent();
+
+        if (parent == null) {
+            throw new IllegalStateException("El archivo no tiene directorio padre.");
+        }
+
+        parent.removeFileByName(file.getName());
+        removeFromFileIndex(file);
+    }
+
+    private void createFileInternal(String parentPath, String fileName, String owner, int sizeInBlocks) {
+        if (fileName == null || fileName.trim().isEmpty()) {
+            throw new IllegalArgumentException("El nombre del archivo no puede ser nulo o vacío.");
+        }
+
+        if (owner == null || owner.trim().isEmpty()) {
+            throw new IllegalArgumentException("El owner no puede ser nulo o vacío.");
+        }
+
+        if (sizeInBlocks <= 0) {
+            throw new IllegalArgumentException("El tamaño en bloques debe ser mayor que 0.");
+        }
+
+        DirectoryNode parentDirectory = resolveDirectory(parentPath);
+
+        if (parentDirectory == null) {
+            throw new IllegalStateException("La ruta padre no existe.");
+        }
+
+        if (parentDirectory.containsName(fileName)) {
+            throw new IllegalStateException("Ya existe un nodo con ese nombre en este directorio.");
+        }
+
+        int[] allocatedBlocks = disk.findFreeBlocks(sizeInBlocks);
+
+        try {
+            for (int i = 0; i < allocatedBlocks.length; i++) {
+                int nextBlockId = (i == allocatedBlocks.length - 1) ? -1 : allocatedBlocks[i + 1];
+                disk.occupyBlock(allocatedBlocks[i], fileName, nextBlockId);
+            }
+
+            FileNode newFile = new FileNode(fileName, owner, parentDirectory, sizeInBlocks, allocatedBlocks[0]);
+            parentDirectory.addFile(newFile);
+            addToFileIndex(newFile);
+
+        } catch (Exception ex) {
+            for (int i = 0; i < allocatedBlocks.length; i++) {
+                Block block = disk.getBlockById(allocatedBlocks[i]);
+                if (!block.isFree() && fileName.equals(block.getFileName())) {
+                    block.release();
+                }
+            }
+            throw ex;
+        }
+    }
+
+    private void renameFileInternal(String filePath, String newName) {
+        FileNode file = getFileByPath(filePath);
+
+        if (file == null) {
+            throw new IllegalStateException("El archivo no existe.");
+        }
+
+        DirectoryNode parent = file.getParent();
+
+        if (parent == null) {
+            throw new IllegalStateException("El archivo no tiene directorio padre.");
+        }
+
+        if (!file.getName().equals(newName) && parent.containsName(newName)) {
+            throw new IllegalStateException("Ya existe un nodo con ese nombre en el directorio padre.");
+        }
+
+        file.setName(newName);
+    }
+
+    private String childPath(String parentPath, String childName) {
+        if (parentPath == null || parentPath.trim().isEmpty()) {
+            throw new IllegalArgumentException("La ruta padre no puede ser nula o vacía.");
+        }
+        if (childName == null || childName.trim().isEmpty()) {
+            throw new IllegalArgumentException("El nombre del nodo no puede ser nulo o vacío.");
+        }
+
+        if ("/".equals(parentPath)) {
+            return "/" + childName;
+        }
+
+        return parentPath + "/" + childName;
+    }
+
+    private String parentPathFromFilePath(String filePath) {
+        if (filePath == null || filePath.trim().isEmpty()) {
+            throw new IllegalArgumentException("La ruta no puede ser nula o vacía.");
+        }
+        if (!filePath.startsWith("/")) {
+            throw new IllegalArgumentException("La ruta debe empezar con '/'.");
+        }
+
+        int lastSlash = filePath.lastIndexOf('/');
+        if (lastSlash <= 0) {
+            return "/";
+        }
+
+        return filePath.substring(0, lastSlash);
+    }
+
+    private String fileNameFromPath(String filePath) {
+        if (filePath == null || filePath.trim().isEmpty()) {
+            throw new IllegalArgumentException("La ruta no puede ser nula o vacía.");
+        }
+        if (!filePath.startsWith("/")) {
+            throw new IllegalArgumentException("La ruta debe empezar con '/'.");
+        }
+
+        int lastSlash = filePath.lastIndexOf('/');
+        if (lastSlash < 0 || lastSlash == filePath.length() - 1) {
+            throw new IllegalArgumentException("La ruta del archivo no es válida.");
+        }
+
+        return filePath.substring(lastSlash + 1);
+    }
+
+    private void ensureInitialized() {
+        if (root == null || disk == null) {
+            throw new IllegalStateException("El sistema de archivos no ha sido inicializado.");
+        }
+    }
 }
