@@ -96,6 +96,20 @@ public class SinglyLinkedList<T> {
         }
     }
 
+    public Object[] toArray() {
+        Object[] result = new Object[size];
+        int index = 0;
+        Node<T> cur = head;
+
+        while (cur != null) {
+            result[index] = cur.value;
+            index++;
+            cur = cur.next;
+        }
+
+        return result;
+    }
+
     public interface Visitor<T> {
         void visit(T value);
     }

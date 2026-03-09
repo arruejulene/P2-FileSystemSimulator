@@ -110,4 +110,16 @@ public class LockManager {
         return e.exclusiveOwnerPid == -1 && e.sharedCount == 0;
     }
 }
+
+    public LockSnapshot[] getSnapshots() {
+        Object[] values = entries.toArray();
+        LockSnapshot[] snapshots = new LockSnapshot[values.length];
+
+        for (int i = 0; i < values.length; i++) {
+            LockEntry entry = (LockEntry) values[i];
+            snapshots[i] = new LockSnapshot(entry.resource, entry.sharedCount, entry.exclusiveOwnerPid);
+        }
+
+        return snapshots;
+    }
 }

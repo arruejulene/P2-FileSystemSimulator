@@ -30,4 +30,8 @@ public class Queue<T> {
     public T peek() {
         return list.peekFirst();
     }
+
+    public Object[] toArray() {
+        return list.toArray();
+    }
 }
