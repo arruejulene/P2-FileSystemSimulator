@@ -1,6 +1,10 @@
 {
   "entries": [
-    {"id":1,"createdAtMillis":1773018838167,"operation":"CREATE_FILE","status":"CONFIRMED","primaryPath":"/system/alpha.txt","secondaryPath":null,"deletedSnapshot":null},
-    {"id":2,"createdAtMillis":1773018838167,"operation":"RENAME_FILE","status":"CONFIRMED","primaryPath":"/system/alpha.txt","secondaryPath":"/system/alpha_v2.txt","deletedSnapshot":null}
+    {"id":1,"createdAtMillis":1773019833289,"operation":"CREATE_DIRECTORY","status":"CONFIRMED","primaryPath":"/system","secondaryPath":null,"deletedSnapshot":null,"deletedDirectorySnapshot":null},
+    {"id":2,"createdAtMillis":1773019833290,"operation":"CREATE_DIRECTORY","status":"CONFIRMED","primaryPath":"/system/logs","secondaryPath":null,"deletedSnapshot":null,"deletedDirectorySnapshot":null},
+    {"id":3,"createdAtMillis":1773019833290,"operation":"CREATE_FILE","status":"CONFIRMED","primaryPath":"/system/logs/a.log","secondaryPath":null,"deletedSnapshot":null,"deletedDirectorySnapshot":null},
+    {"id":4,"createdAtMillis":1773019833290,"operation":"CREATE_DIRECTORY","status":"CONFIRMED","primaryPath":"/system/logs/old","secondaryPath":null,"deletedSnapshot":null,"deletedDirectorySnapshot":null},
+    {"id":5,"createdAtMillis":1773019833290,"operation":"CREATE_FILE","status":"CONFIRMED","primaryPath":"/system/logs/old/b.log","secondaryPath":null,"deletedSnapshot":null,"deletedDirectorySnapshot":null},
+    {"id":6,"createdAtMillis":1773019833291,"operation":"DELETE_DIRECTORY","status":"CONFIRMED","primaryPath":"/system/logs","secondaryPath":null,"deletedSnapshot":null,"deletedDirectorySnapshot":{"fullPath":"/system/logs","parentPath":"/system","directoryName":"logs","owner":"admin","files":[{"fullPath":"/system/logs/a.log","parentPath":"/system/logs","fileName":"a.log","owner":"admin","sizeInBlocks":2,"chainBlockIds":[0,1]}],"subdirectories":[{"fullPath":"/system/logs/old","parentPath":"/system/logs","directoryName":"old","owner":"admin","files":[{"fullPath":"/system/logs/old/b.log","parentPath":"/system/logs/old","fileName":"b.log","owner":"admin","sizeInBlocks":2,"chainBlockIds":[2,3]}],"subdirectories":[]}]}}
   ]
 }

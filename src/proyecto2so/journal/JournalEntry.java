@@ -8,6 +8,7 @@ public class JournalEntry {
     private final String primaryPath;
     private final String secondaryPath;
     private final DeletedFileSnapshot deletedFileSnapshot;
+    private final DeletedDirectorySnapshot deletedDirectorySnapshot;
 
     public JournalEntry(
             long id,
@@ -23,7 +24,8 @@ public class JournalEntry {
                 JournalStatus.PENDING,
                 primaryPath,
                 secondaryPath,
-                deletedFileSnapshot
+                deletedFileSnapshot,
+                null
         );
     }
 
@@ -34,7 +36,8 @@ public class JournalEntry {
             JournalStatus status,
             String primaryPath,
             String secondaryPath,
-            DeletedFileSnapshot deletedFileSnapshot
+            DeletedFileSnapshot deletedFileSnapshot,
+            DeletedDirectorySnapshot deletedDirectorySnapshot
     ) {
         if (id <= 0) {
             throw new IllegalArgumentException("id debe ser > 0.");
@@ -59,6 +62,7 @@ public class JournalEntry {
         this.primaryPath = primaryPath;
         this.secondaryPath = secondaryPath;
         this.deletedFileSnapshot = deletedFileSnapshot;
+        this.deletedDirectorySnapshot = deletedDirectorySnapshot;
     }
 
     public long getId() {
@@ -91,5 +95,9 @@ public class JournalEntry {
 
     public DeletedFileSnapshot getDeletedFileSnapshot() {
         return deletedFileSnapshot;
+    }
+
+    public DeletedDirectorySnapshot getDeletedDirectorySnapshot() {
+        return deletedDirectorySnapshot;
     }
 }

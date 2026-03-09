@@ -14,15 +14,27 @@ public class JournalManager {
     }
 
     public JournalEntry beginCreateFile(String fullPath) {
-        return append(JournalOperation.CREATE_FILE, fullPath, null, null);
+        return append(JournalOperation.CREATE_FILE, fullPath, null, null, null);
     }
 
     public JournalEntry beginDeleteFile(String fullPath, DeletedFileSnapshot snapshot) {
-        return append(JournalOperation.DELETE_FILE, fullPath, null, snapshot);
+        return append(JournalOperation.DELETE_FILE, fullPath, null, snapshot, null);
     }
 
     public JournalEntry beginRenameFile(String oldPath, String newPath) {
-        return append(JournalOperation.RENAME_FILE, oldPath, newPath, null);
+        return append(JournalOperation.RENAME_FILE, oldPath, newPath, null, null);
+    }
+
+    public JournalEntry beginCreateDirectory(String fullPath) {
+        return append(JournalOperation.CREATE_DIRECTORY, fullPath, null, null, null);
+    }
+
+    public JournalEntry beginDeleteDirectory(String fullPath, DeletedDirectorySnapshot snapshot) {
+        return append(JournalOperation.DELETE_DIRECTORY, fullPath, null, null, snapshot);
+    }
+
+    public JournalEntry beginRenameDirectory(String oldPath, String newPath) {
+        return append(JournalOperation.RENAME_DIRECTORY, oldPath, newPath, null, null);
     }
 
     public void confirm(long entryId) {
@@ -78,9 +90,19 @@ public class JournalManager {
             JournalOperation op,
             String primaryPath,
             String secondaryPath,
-            DeletedFileSnapshot deletedFileSnapshot
+            DeletedFileSnapshot deletedFileSnapshot,
+            DeletedDirectorySnapshot deletedDirectorySnapshot
     ) {
-        JournalEntry e = new JournalEntry(nextId, op, primaryPath, secondaryPath, deletedFileSnapshot);
+        JournalEntry e = new JournalEntry(
+                nextId,
+                System.currentTimeMillis(),
+                op,
+                JournalStatus.PENDING,
+                primaryPath,
+                secondaryPath,
+                deletedFileSnapshot,
+                deletedDirectorySnapshot
+        );
         entries.add(e);
         nextId++;
         return e;

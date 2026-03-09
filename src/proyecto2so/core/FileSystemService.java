@@ -1,6 +1,7 @@
 package proyecto2so.core;
 
 import proyecto2so.journal.DeletedFileSnapshot;
+import proyecto2so.journal.DeletedDirectorySnapshot;
 import proyecto2so.journal.JournalEntry;
 import proyecto2so.journal.JournalManager;
 import proyecto2so.journal.JournalOperation;
@@ -31,22 +32,24 @@ public class FileSystemService {
     }
 
     public void createDirectory(String parentPath, String directoryName, String owner) {
-        if (root == null || disk == null) {
-            throw new IllegalStateException("El sistema de archivos no ha sido inicializado.");
+        ensureInitialized();
+        validateCreateDirectory(parentPath, directoryName, owner);
+        String fullPath = childPath(parentPath, directoryName);
+
+        if (!journalingEnabled) {
+            createDirectoryInternal(parentPath, directoryName, owner);
+            return;
         }
 
-        DirectoryNode parentDirectory = resolveDirectory(parentPath);
-
-        if (parentDirectory == null) {
-            throw new IllegalStateException("La ruta padre no existe.");
-        }
-
-        DirectoryNode newDirectory = new DirectoryNode(directoryName, owner, parentDirectory);
-        parentDirectory.addSubdirectory(newDirectory);
+        JournalEntry entry = journalManager.beginCreateDirectory(fullPath);
+        createDirectoryInternal(parentPath, directoryName, owner);
+        journalManager.failIfCrashRequested();
+        journalManager.confirm(entry.getId());
     }
 
     public void createFile(String parentPath, String fileName, String owner, int sizeInBlocks) {
         ensureInitialized();
+        validateCreateFile(parentPath, fileName, owner, sizeInBlocks);
         String fullPath = childPath(parentPath, fileName);
 
         if (!journalingEnabled) {
@@ -145,37 +148,29 @@ public class FileSystemService {
     }
 
     public void deleteDirectoryRecursive(String directoryPath) {
-        if (root == null || disk == null) {
-            throw new IllegalStateException("El sistema de archivos no ha sido inicializado.");
-        }
+        ensureInitialized();
 
-        if ("/".equals(directoryPath)) {
-            throw new IllegalStateException("No se puede eliminar el directorio raíz.");
+        if (!journalingEnabled) {
+            deleteDirectoryRecursiveInternal(directoryPath);
+            return;
         }
 
         DirectoryNode target = resolveDirectory(directoryPath);
-
         if (target == null) {
             throw new IllegalStateException("El directorio no existe.");
         }
 
-        deleteDirectoryContents(target);
+        DeletedDirectorySnapshot snapshot = buildDeletedDirectorySnapshot(target);
+        JournalEntry entry = journalManager.beginDeleteDirectory(directoryPath, snapshot);
 
-        DirectoryNode parent = target.getParent();
-
-        if (parent == null) {
-            throw new IllegalStateException("El directorio no tiene padre.");
-        }
-
-        parent.removeSubdirectoryByName(target.getName());
+        deleteDirectoryRecursiveInternal(directoryPath);
+        journalManager.failIfCrashRequested();
+        journalManager.confirm(entry.getId());
     }
 
     public void renameFile(String filePath, String newName) {
         ensureInitialized();
-
-        if (newName == null || newName.trim().isEmpty()) {
-            throw new IllegalArgumentException("El nuevo nombre no puede ser nulo o vacío.");
-        }
+        validateRenameFile(filePath, newName);
 
         String parentPath = parentPathFromFilePath(filePath);
         String newPath = childPath(parentPath, newName);
@@ -192,35 +187,21 @@ public class FileSystemService {
     }
 
     public void renameDirectory(String directoryPath, String newName) {
-        if (root == null || disk == null) {
-            throw new IllegalStateException("El sistema de archivos no ha sido inicializado.");
+        ensureInitialized();
+        validateRenameDirectory(directoryPath, newName);
+
+        String parentPath = parentPathFromFilePath(directoryPath);
+        String newPath = childPath(parentPath, newName);
+
+        if (!journalingEnabled) {
+            renameDirectoryInternal(directoryPath, newName);
+            return;
         }
 
-        if (newName == null || newName.trim().isEmpty()) {
-            throw new IllegalArgumentException("El nuevo nombre no puede ser nulo o vacío.");
-        }
-
-        if ("/".equals(directoryPath)) {
-            throw new IllegalStateException("No se puede renombrar la raíz.");
-        }
-
-        DirectoryNode directory = resolveDirectory(directoryPath);
-
-        if (directory == null) {
-            throw new IllegalStateException("El directorio no existe.");
-        }
-
-        DirectoryNode parent = directory.getParent();
-
-        if (parent == null) {
-            throw new IllegalStateException("El directorio no tiene padre.");
-        }
-
-        if (!directory.getName().equals(newName) && parent.containsName(newName)) {
-            throw new IllegalStateException("Ya existe un nodo con ese nombre en el directorio padre.");
-        }
-
-        directory.setName(newName);
+        JournalEntry entry = journalManager.beginRenameDirectory(directoryPath, newPath);
+        renameDirectoryInternal(directoryPath, newName);
+        journalManager.failIfCrashRequested();
+        journalManager.confirm(entry.getId());
     }
 
     public AllocationEntry[] getAllocationTable() {
@@ -249,7 +230,7 @@ public class FileSystemService {
         DirectoryNode[] subdirs = directory.getSubdirectories();
 
         while (subdirs.length > 0) {
-            deleteDirectoryRecursive(subdirs[0].getPath());
+            deleteDirectoryRecursiveInternal(subdirs[0].getPath());
             subdirs = directory.getSubdirectories();
         }
     }
@@ -431,6 +412,92 @@ public class FileSystemService {
             }
 
             renameFileInternal(newPath, fileNameFromPath(oldPath));
+            return;
+        }
+
+        if (entry.getOperation() == JournalOperation.CREATE_DIRECTORY) {
+            DirectoryNode createdDirectory = resolveDirectory(entry.getPrimaryPath());
+            if (createdDirectory != null) {
+                deleteDirectoryRecursiveInternal(entry.getPrimaryPath());
+            }
+            return;
+        }
+
+        if (entry.getOperation() == JournalOperation.DELETE_DIRECTORY) {
+            if (resolveDirectory(entry.getPrimaryPath()) == null) {
+                restoreDeletedDirectory(entry.getDeletedDirectorySnapshot());
+            }
+            return;
+        }
+
+        if (entry.getOperation() == JournalOperation.RENAME_DIRECTORY) {
+            String oldPath = entry.getPrimaryPath();
+            String newPath = entry.getSecondaryPath();
+
+            DirectoryNode oldDir = resolveDirectory(oldPath);
+            if (oldDir != null) {
+                return;
+            }
+
+            DirectoryNode renamedDir = resolveDirectory(newPath);
+            if (renamedDir == null) {
+                return;
+            }
+
+            renameDirectoryInternal(newPath, fileNameFromPath(oldPath));
+        }
+    }
+
+    private DeletedDirectorySnapshot buildDeletedDirectorySnapshot(DirectoryNode directory) {
+        if (directory == null) {
+            throw new IllegalArgumentException("directory no puede ser null.");
+        }
+        if (directory.getParent() == null) {
+            throw new IllegalStateException("No se puede crear snapshot del directorio raíz.");
+        }
+
+        FileNode[] files = directory.getFiles();
+        DeletedFileSnapshot[] fileSnapshots = new DeletedFileSnapshot[files.length];
+
+        for (int i = 0; i < files.length; i++) {
+            fileSnapshots[i] = buildDeletedFileSnapshot(files[i], files[i].getPath());
+        }
+
+        DirectoryNode[] subdirs = directory.getSubdirectories();
+        DeletedDirectorySnapshot[] subdirSnapshots = new DeletedDirectorySnapshot[subdirs.length];
+        for (int i = 0; i < subdirs.length; i++) {
+            subdirSnapshots[i] = buildDeletedDirectorySnapshot(subdirs[i]);
+        }
+
+        return new DeletedDirectorySnapshot(
+                directory.getPath(),
+                directory.getParent().getPath(),
+                directory.getName(),
+                directory.getOwner(),
+                fileSnapshots,
+                subdirSnapshots
+        );
+    }
+
+    private void restoreDeletedDirectory(DeletedDirectorySnapshot snapshot) {
+        if (snapshot == null) {
+            throw new IllegalStateException("No hay snapshot para restaurar directorio eliminado.");
+        }
+
+        if (resolveDirectory(snapshot.getFullPath()) != null) {
+            return;
+        }
+
+        createDirectoryInternal(snapshot.getParentPath(), snapshot.getDirectoryName(), snapshot.getOwner());
+
+        DeletedFileSnapshot[] files = snapshot.getFiles();
+        for (int i = 0; i < files.length; i++) {
+            restoreDeletedFile(files[i]);
+        }
+
+        DeletedDirectorySnapshot[] subdirs = snapshot.getSubdirectories();
+        for (int i = 0; i < subdirs.length; i++) {
+            restoreDeletedDirectory(subdirs[i]);
         }
     }
 
@@ -521,6 +588,66 @@ public class FileSystemService {
 
         parent.removeFileByName(file.getName());
         removeFromFileIndex(file);
+    }
+
+    private void createDirectoryInternal(String parentPath, String directoryName, String owner) {
+        if (directoryName == null || directoryName.trim().isEmpty()) {
+            throw new IllegalArgumentException("El nombre del directorio no puede ser nulo o vacío.");
+        }
+        if (owner == null || owner.trim().isEmpty()) {
+            throw new IllegalArgumentException("El owner no puede ser nulo o vacío.");
+        }
+
+        DirectoryNode parentDirectory = resolveDirectory(parentPath);
+        if (parentDirectory == null) {
+            throw new IllegalStateException("La ruta padre no existe.");
+        }
+
+        DirectoryNode newDirectory = new DirectoryNode(directoryName, owner, parentDirectory);
+        parentDirectory.addSubdirectory(newDirectory);
+    }
+
+    private void deleteDirectoryRecursiveInternal(String directoryPath) {
+        if ("/".equals(directoryPath)) {
+            throw new IllegalStateException("No se puede eliminar el directorio raíz.");
+        }
+
+        DirectoryNode target = resolveDirectory(directoryPath);
+        if (target == null) {
+            throw new IllegalStateException("El directorio no existe.");
+        }
+
+        deleteDirectoryContents(target);
+
+        DirectoryNode parent = target.getParent();
+        if (parent == null) {
+            throw new IllegalStateException("El directorio no tiene padre.");
+        }
+
+        parent.removeSubdirectoryByName(target.getName());
+    }
+
+    private void renameDirectoryInternal(String directoryPath, String newName) {
+        if ("/".equals(directoryPath)) {
+            throw new IllegalStateException("No se puede renombrar la raíz.");
+        }
+
+        DirectoryNode directory = resolveDirectory(directoryPath);
+
+        if (directory == null) {
+            throw new IllegalStateException("El directorio no existe.");
+        }
+
+        DirectoryNode parent = directory.getParent();
+        if (parent == null) {
+            throw new IllegalStateException("El directorio no tiene padre.");
+        }
+
+        if (!directory.getName().equals(newName) && parent.containsName(newName)) {
+            throw new IllegalStateException("Ya existe un nodo con ese nombre en el directorio padre.");
+        }
+
+        directory.setName(newName);
     }
 
     private void createFileInternal(String parentPath, String fileName, String owner, int sizeInBlocks) {
@@ -639,6 +766,90 @@ public class FileSystemService {
     private void ensureInitialized() {
         if (root == null || disk == null) {
             throw new IllegalStateException("El sistema de archivos no ha sido inicializado.");
+        }
+    }
+
+    private void validateCreateDirectory(String parentPath, String directoryName, String owner) {
+        if (directoryName == null || directoryName.trim().isEmpty()) {
+            throw new IllegalArgumentException("El nombre del directorio no puede ser nulo o vacío.");
+        }
+        if (owner == null || owner.trim().isEmpty()) {
+            throw new IllegalArgumentException("El owner no puede ser nulo o vacío.");
+        }
+
+        DirectoryNode parentDirectory = resolveDirectory(parentPath);
+        if (parentDirectory == null) {
+            throw new IllegalStateException("La ruta padre no existe.");
+        }
+        if (parentDirectory.containsName(directoryName)) {
+            throw new IllegalStateException("Ya existe un nodo con ese nombre en este directorio.");
+        }
+    }
+
+    private void validateCreateFile(String parentPath, String fileName, String owner, int sizeInBlocks) {
+        if (fileName == null || fileName.trim().isEmpty()) {
+            throw new IllegalArgumentException("El nombre del archivo no puede ser nulo o vacío.");
+        }
+        if (owner == null || owner.trim().isEmpty()) {
+            throw new IllegalArgumentException("El owner no puede ser nulo o vacío.");
+        }
+        if (sizeInBlocks <= 0) {
+            throw new IllegalArgumentException("El tamaño en bloques debe ser mayor que 0.");
+        }
+
+        DirectoryNode parentDirectory = resolveDirectory(parentPath);
+        if (parentDirectory == null) {
+            throw new IllegalStateException("La ruta padre no existe.");
+        }
+        if (parentDirectory.containsName(fileName)) {
+            throw new IllegalStateException("Ya existe un nodo con ese nombre en este directorio.");
+        }
+        if (disk.countFreeBlocks() < sizeInBlocks) {
+            throw new IllegalStateException("No hay suficientes bloques libres.");
+        }
+    }
+
+    private void validateRenameFile(String filePath, String newName) {
+        if (newName == null || newName.trim().isEmpty()) {
+            throw new IllegalArgumentException("El nuevo nombre no puede ser nulo o vacío.");
+        }
+
+        FileNode file = getFileByPath(filePath);
+        if (file == null) {
+            throw new IllegalStateException("El archivo no existe.");
+        }
+
+        DirectoryNode parent = file.getParent();
+        if (parent == null) {
+            throw new IllegalStateException("El archivo no tiene directorio padre.");
+        }
+
+        if (!file.getName().equals(newName) && parent.containsName(newName)) {
+            throw new IllegalStateException("Ya existe un nodo con ese nombre en el directorio padre.");
+        }
+    }
+
+    private void validateRenameDirectory(String directoryPath, String newName) {
+        if (newName == null || newName.trim().isEmpty()) {
+            throw new IllegalArgumentException("El nuevo nombre no puede ser nulo o vacío.");
+        }
+
+        if ("/".equals(directoryPath)) {
+            throw new IllegalStateException("No se puede renombrar la raíz.");
+        }
+
+        DirectoryNode directory = resolveDirectory(directoryPath);
+        if (directory == null) {
+            throw new IllegalStateException("El directorio no existe.");
+        }
+
+        DirectoryNode parent = directory.getParent();
+        if (parent == null) {
+            throw new IllegalStateException("El directorio no tiene padre.");
+        }
+
+        if (!directory.getName().equals(newName) && parent.containsName(newName)) {
+            throw new IllegalStateException("Ya existe un nodo con ese nombre en el directorio padre.");
         }
     }
 }
