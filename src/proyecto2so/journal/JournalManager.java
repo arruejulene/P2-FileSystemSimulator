@@ -37,6 +37,31 @@ public class JournalManager {
         return entries.toArray(new JournalEntry[0]);
     }
 
+    public void replaceEntries(JournalEntry[] loadedEntries) {
+        entries.clear();
+        nextId = 1L;
+
+        if (loadedEntries == null) {
+            return;
+        }
+
+        long maxId = 0L;
+
+        for (int i = 0; i < loadedEntries.length; i++) {
+            JournalEntry entry = loadedEntries[i];
+            if (entry == null) {
+                continue;
+            }
+
+            entries.add(entry);
+            if (entry.getId() > maxId) {
+                maxId = entry.getId();
+            }
+        }
+
+        nextId = maxId + 1L;
+    }
+
     public void simulateCrashAfterNextApply() {
         this.crashAfterApply = true;
     }

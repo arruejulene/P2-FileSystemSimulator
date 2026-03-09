@@ -1,0 +1,6 @@
+{
+  "entries": [
+    {"id":1,"createdAtMillis":1773018838167,"operation":"CREATE_FILE","status":"CONFIRMED","primaryPath":"/system/alpha.txt","secondaryPath":null,"deletedSnapshot":null},
+    {"id":2,"createdAtMillis":1773018838167,"operation":"RENAME_FILE","status":"CONFIRMED","primaryPath":"/system/alpha.txt","secondaryPath":"/system/alpha_v2.txt","deletedSnapshot":null}
+  ]
+}

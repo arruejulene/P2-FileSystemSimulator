@@ -366,6 +366,10 @@ public class FileSystemService {
         return journalManager.getEntries();
     }
 
+    public void replaceJournalEntries(JournalEntry[] entries) {
+        journalManager.replaceEntries(entries);
+    }
+
     public void simulateCrashAfterNextCriticalOperation() {
         journalManager.simulateCrashAfterNextApply();
     }

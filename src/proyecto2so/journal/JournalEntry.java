@@ -16,20 +16,46 @@ public class JournalEntry {
             String secondaryPath,
             DeletedFileSnapshot deletedFileSnapshot
     ) {
+        this(
+                id,
+                System.currentTimeMillis(),
+                operation,
+                JournalStatus.PENDING,
+                primaryPath,
+                secondaryPath,
+                deletedFileSnapshot
+        );
+    }
+
+    public JournalEntry(
+            long id,
+            long createdAtMillis,
+            JournalOperation operation,
+            JournalStatus status,
+            String primaryPath,
+            String secondaryPath,
+            DeletedFileSnapshot deletedFileSnapshot
+    ) {
         if (id <= 0) {
             throw new IllegalArgumentException("id debe ser > 0.");
         }
+        if (createdAtMillis <= 0) {
+            throw new IllegalArgumentException("createdAtMillis debe ser > 0.");
+        }
         if (operation == null) {
             throw new IllegalArgumentException("operation no puede ser null.");
+        }
+        if (status == null) {
+            throw new IllegalArgumentException("status no puede ser null.");
         }
         if (primaryPath == null || primaryPath.trim().isEmpty()) {
             throw new IllegalArgumentException("primaryPath no puede ser nulo o vacío.");
         }
 
         this.id = id;
-        this.createdAtMillis = System.currentTimeMillis();
+        this.createdAtMillis = createdAtMillis;
         this.operation = operation;
-        this.status = JournalStatus.PENDING;
+        this.status = status;
         this.primaryPath = primaryPath;
         this.secondaryPath = secondaryPath;
         this.deletedFileSnapshot = deletedFileSnapshot;
