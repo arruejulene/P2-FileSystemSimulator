@@ -80,6 +80,34 @@ public class IOEngine {
         return terminated;
     }
 
+    public Object[] getNewQueueSnapshot() {
+        return newQueue.toArray();
+    }
+
+    public Object[] getReadyQueueSnapshot() {
+        return readyQueue.toArray();
+    }
+
+    public Object[] getIoPendingSnapshot() {
+        return ioPending.toArray();
+    }
+
+    public Object[] getBlockedSnapshot() {
+        return blocked.toArray();
+    }
+
+    public Object[] getRunningSnapshot() {
+        return running.toArray();
+    }
+
+    public Object[] getTerminatedSnapshot() {
+        return terminated.toArray();
+    }
+
+    public LockSnapshot[] getLockSnapshots() {
+        return lockManager.getSnapshots();
+    }
+
     public void tick() {
         admitNewProcesses();
         moveReadyToIoPending();
@@ -215,35 +243,47 @@ public class IOEngine {
 
     private void executeRequest(ProcessControlBlock pcb) {
         Request req = pcb.getRequest();
-        String path = pcb.getResourcePath();
+        String path = resolveExecutionPath(pcb);
+
+        // The target may have been renamed/deleted by a previously completed process.
+        // In that case we treat this request as obsolete and finish it without failing the engine loop.
+        if (path == null) {
+            return;
+        }
 
         if (req.getOp() == RequestOp.READ) {
-            FileNode file = fs.getFileByPath(path);
-            if (file == null) {
-                throw new IllegalStateException("READ: Archivo no existe: " + path);
-            }
             fs.getFileBlockChain(path);
 
         } else if (req.getOp() == RequestOp.UPDATE) {
-            FileNode file = fs.getFileByPath(path);
-            if (file == null) {
-                throw new IllegalStateException("UPDATE: Archivo no existe: " + path);
-            }
-
             String newName = fileNameFromPath(path) + "_upd_" + pcb.getPid();
             fs.renameFile(path, newName);
 
         } else if (req.getOp() == RequestOp.DELETE) {
-            FileNode file = fs.getFileByPath(path);
-            if (file == null) {
-                throw new IllegalStateException("DELETE: Archivo no existe: " + path);
-            }
-
             fs.deleteFile(path);
 
         } else {
             throw new IllegalStateException("Operación no soportada: " + req.getOp());
         }
+    }
+
+    private String resolveExecutionPath(ProcessControlBlock pcb) {
+        String requestedPath = pcb.getResourcePath();
+        FileNode direct = fs.getFileByPath(requestedPath);
+        if (direct != null) {
+            return requestedPath;
+        }
+
+        // Fallback: if the file was renamed, try to resolve by the requested disk position.
+        FileNode[] files = fs.getFileIndex();
+        int requestedPos = pcb.getRequest().getPos();
+
+        for (int i = 0; i < files.length; i++) {
+            if (files[i].getFirstBlockId() == requestedPos) {
+                return files[i].getPath();
+            }
+        }
+
+        return null;
     }
 
     private String fileNameFromPath(String path) {
