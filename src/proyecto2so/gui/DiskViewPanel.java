@@ -16,7 +16,7 @@ public class DiskViewPanel extends JPanel {
     public DiskViewPanel() {
         this.disk = null;
         this.headPos = 0;
-        setBackground(new Color(247, 249, 252));
+        setBackground(new Color(42, 42, 45));
         setPreferredSize(new Dimension(640, 220));
     }
 
@@ -32,7 +32,7 @@ public class DiskViewPanel extends JPanel {
         Graphics2D g2 = (Graphics2D) g;
 
         if (disk == null) {
-            g2.setColor(Color.DARK_GRAY);
+            g2.setColor(new Color(220, 220, 225));
             g2.drawString("Sin disco inicializado", 16, 24);
             return;
         }
@@ -53,37 +53,34 @@ public class DiskViewPanel extends JPanel {
             int y = y0 + row * (cellH + 4);
 
             Block b = blocks[i];
-            Color fill = b.isFree() ? new Color(191, 242, 195) : new Color(255, 204, 188);
-            if (i == headPos) {
-                fill = new Color(255, 235, 120);
+            Color fill;
+            if (b.isFree()) {
+                fill = new Color(86, 94, 106);
+            } else {
+                fill = FileColorPalette.colorForFile(b.getFileName());
             }
 
             g2.setColor(fill);
             g2.fillRect(x, y, cellW - 2, cellH);
-            g2.setColor(new Color(70, 70, 70));
+            g2.setColor(new Color(132, 132, 142));
             g2.drawRect(x, y, cellW - 2, cellH);
 
+            if (i == headPos) {
+                g2.setColor(new Color(255, 219, 88));
+                g2.drawRect(x - 1, y - 1, cellW, cellH + 1);
+                g2.drawRect(x - 2, y - 2, cellW + 2, cellH + 3);
+            }
+
+            g2.setColor(labelColorFor(fill));
             String label = String.valueOf(i);
             g2.drawString(label, x + 3, y + 14);
         }
 
-        int legendY = y0 + ((blocks.length / columns) + 2) * (cellH + 4);
-        g2.setColor(new Color(191, 242, 195));
-        g2.fillRect(10, legendY, 14, 14);
-        g2.setColor(Color.BLACK);
-        g2.drawRect(10, legendY, 14, 14);
-        g2.drawString("Libre", 30, legendY + 12);
-
-        g2.setColor(new Color(255, 204, 188));
-        g2.fillRect(90, legendY, 14, 14);
-        g2.setColor(Color.BLACK);
-        g2.drawRect(90, legendY, 14, 14);
-        g2.drawString("Ocupado", 110, legendY + 12);
-
-        g2.setColor(new Color(255, 235, 120));
-        g2.fillRect(190, legendY, 14, 14);
-        g2.setColor(Color.BLACK);
-        g2.drawRect(190, legendY, 14, 14);
-        g2.drawString("Cabezal", 210, legendY + 12);
     }
+
+    private Color labelColorFor(Color bg) {
+        int luminance = (bg.getRed() * 299 + bg.getGreen() * 587 + bg.getBlue() * 114) / 1000;
+        return luminance < 140 ? new Color(245, 245, 248) : new Color(18, 18, 20);
+    }
+
 }
