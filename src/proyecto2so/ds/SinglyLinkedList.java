@@ -110,6 +110,12 @@ public class SinglyLinkedList<T> {
         return result;
     }
 
+    public void clear() {
+        head = null;
+        tail = null;
+        size = 0;
+    }
+
     public interface Visitor<T> {
         void visit(T value);
     }
