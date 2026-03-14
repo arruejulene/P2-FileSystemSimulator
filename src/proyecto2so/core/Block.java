@@ -45,6 +45,16 @@ public class Block {
         this.nextBlockId = -1;
     }
 
+    public void renameFile(String newFileName) {
+        if (newFileName == null || newFileName.trim().isEmpty()) {
+            throw new IllegalArgumentException("newFileName no puede ser nulo o vacío.");
+        }
+        if (free) {
+            throw new IllegalStateException("No se puede renombrar un bloque libre.");
+        }
+        this.fileName = newFileName;
+    }
+
     @Override
     public String toString() {
         return "Block{" +

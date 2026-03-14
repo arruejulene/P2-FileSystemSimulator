@@ -108,6 +108,16 @@ public class IOEngine {
         return lockManager.getSnapshots();
     }
 
+    public void reset() {
+        newQueue.clear();
+        readyQueue.clear();
+        ioPending.clear();
+        blocked.clear();
+        running.clear();
+        terminated.clear();
+        lockManager.clear();
+    }
+
     public void tick() {
         admitNewProcesses();
         moveReadyToIoPending();
@@ -133,73 +143,56 @@ public class IOEngine {
 
     
     private void tryStartProcesses() {
-        boolean startedSomething = true;
-
-        while (startedSomething) {
-            startedSomething = false;
-
-            ProcessControlBlock next = scheduler.selectNext(ioPending);
-            if (next == null) return;
-
-            boolean acquired = lockManager.tryAcquire(
-                    next.getResourcePath(),
-                    next.getPid(),
-                    next.getNeededLock()
-            );
-
-            if (acquired) {
-                ioPending.remove(next);
-                next.setState(ProcessState.RUNNING);
-
-                // mover cabezal cuando la solicitud comienza a ejecutarse
-                scheduler.moveHeadTo(next.getRequest().getPos());
-
-                running.addLast(next);
-                startedSomething = true;
-            } else {
-                // si no se puede adquirir el lock, lo mandamos a bloqueados
-                ioPending.remove(next);
-                next.setState(ProcessState.BLOCKED);
-                next.setBlockedReason("Recurso ocupado: " + next.getResourcePath());
-                blocked.addLast(next);
-                startedSomething = true;
-            }
+        ProcessControlBlock next = scheduler.selectNext(ioPending);
+        if (next == null) {
+            return;
         }
+
+        boolean acquired = lockManager.tryAcquire(
+                next.getResourcePath(),
+                next.getPid(),
+                next.getNeededLock()
+        );
+
+        ioPending.remove(next);
+
+        if (acquired) {
+            next.setState(ProcessState.RUNNING);
+            // mover cabezal cuando la solicitud comienza a ejecutarse
+            scheduler.moveHeadTo(next.getRequest().getPos());
+            running.addLast(next);
+            return;
+        }
+
+        // si no se puede adquirir el lock, lo mandamos a bloqueados
+        next.setState(ProcessState.BLOCKED);
+        next.setBlockedReason("Recurso ocupado: " + next.getResourcePath());
+        blocked.addLast(next);
     }
 
     
     private void advanceRunningProcesses() {
-        boolean progressed = true;
+        Object[] snapshot = running.toArray();
 
-        while (progressed) {
-            progressed = false;
+        for (int i = 0; i < snapshot.length; i++) {
+            ProcessControlBlock pcb = (ProcessControlBlock) snapshot[i];
+            if (pcb == null) {
+                continue;
+            }
 
-            final ProcessControlBlock[] finished = new ProcessControlBlock[1];
+            pcb.consumeTick();
+            if (!pcb.isFinishedExecution()) {
+                continue;
+            }
 
-            running.forEach(pcb -> {
-                if (finished[0] != null) return;
-                if (pcb == null) return;
+            running.remove(pcb);
 
-                pcb.consumeTick();
-
-                if (pcb.isFinishedExecution()) {
-                    finished[0] = pcb;
-                }
-            });
-
-            if (finished[0] != null) {
-                ProcessControlBlock pcb = finished[0];
-                running.remove(pcb);
-
-                try {
-                    executeRequest(pcb);
-                    pcb.setState(ProcessState.TERMINATED);
-                    terminated.addLast(pcb);
-                } finally {
-                    lockManager.release(pcb.getResourcePath(), pcb.getPid(), pcb.getNeededLock());
-                }
-
-                progressed = true;
+            try {
+                executeRequest(pcb);
+                pcb.setState(ProcessState.TERMINATED);
+                terminated.addLast(pcb);
+            } finally {
+                lockManager.release(pcb.getResourcePath(), pcb.getPid(), pcb.getNeededLock());
             }
         }
     }

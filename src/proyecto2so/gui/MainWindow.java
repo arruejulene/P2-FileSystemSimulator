@@ -10,20 +10,25 @@ import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.Rectangle;
+import java.io.File;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTable;
 import javax.swing.JTextArea;
+import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.Icon;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.swing.plaf.basic.BasicSplitPaneDivider;
 import javax.swing.plaf.basic.BasicSplitPaneUI;
 import javax.swing.plaf.basic.BasicComboBoxUI;
@@ -46,6 +51,11 @@ import proyecto2so.core.RequestOp;
 import proyecto2so.journal.JournalEntry;
 
 public class MainWindow extends JFrame {
+    private enum UiRole {
+        ADMIN,
+        USER
+    }
+
     private static final Color BG_APP = new Color(28, 28, 30);
     private static final Color BG_PANEL = new Color(42, 42, 45);
     private static final Color BG_PANEL_SOFT = new Color(54, 54, 58);
@@ -69,28 +79,58 @@ public class MainWindow extends JFrame {
     private final JTextArea logArea;
     private final JLabel cycleLabel;
     private final JLabel systemStatusLabel;
+    private final JButton runBtn;
+    private final JButton createFileBtn;
+    private final JButton createDirBtn;
+    private final JButton renameNodeBtn;
+    private final JButton deleteNodeBtn;
+    private final JButton loadScenarioBtn;
+    private final JButton addReadBtn;
+    private final JButton addDeleteBtn;
+    private final JButton crashBtn;
+    private final JComboBox<SchedulingPolicy> policyCombo;
+    private final JComboBox<String> roleCombo;
+    private final JTextField cycleMsField;
     private final CardLayout centerViewLayout;
     private final JPanel centerViewPanel;
     private final Timer timer;
     private boolean autoRunning;
     private int cycleCount;
+    private UiRole currentRole;
+    private boolean suppressPolicyEvent;
+    private Timer cycleMsApplyTimer;
 
     public MainWindow() {
-        super("Proyecto 2 SO - GUI Core");
+        super("Proyecto 2 SO");
         this.controller = new GuiSimulationController();
         this.diskPanel = new DiskViewPanel();
         this.fsTree = new JTree();
         this.allocationTable = createTable(new String[]{"Archivo", "Bloques", "Bloque inicial"});
         this.locksTable = createTable(new String[]{"Recurso", "Shared", "Exclusive PID"});
-        this.queuesTable = createTable(new String[]{"Cola", "Cantidad", "PIDs"});
+        this.queuesTable = createTable(new String[]{"Cola", "Cantidad", "POS"});
         this.journalTable = createTable(new String[]{"Operación", "Estado"});
         this.logArea = new JTextArea();
         this.cycleLabel = new JLabel("Ciclo: 0");
         this.systemStatusLabel = new JLabel("Estado del Sistema: Normal");
+        this.runBtn = createTopButton("Run/Pause");
+        this.createFileBtn = createTopButton("Crear Archivo");
+        this.createDirBtn = createTopButton("Crear Directorio");
+        this.renameNodeBtn = createTopButton("Actualizar Nodo");
+        this.deleteNodeBtn = createTopButton("Eliminar Nodo");
+        this.loadScenarioBtn = createTopButton("Cargar Escenario JSON");
+        this.addReadBtn = createTopButton("Add READ");
+        this.addDeleteBtn = createTopButton("Add DELETE");
+        this.crashBtn = createTopButton("Simular Crash");
+        this.policyCombo = new JComboBox<>(SchedulingPolicy.values());
+        this.roleCombo = new JComboBox<>(new String[]{"Administrador", "Usuario"});
+        this.cycleMsField = new JTextField("800", 5);
         this.centerViewLayout = new CardLayout();
         this.centerViewPanel = new JPanel(centerViewLayout);
         this.autoRunning = false;
         this.cycleCount = 0;
+        this.currentRole = UiRole.ADMIN;
+        this.suppressPolicyEvent = false;
+        this.cycleMsApplyTimer = null;
 
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setPreferredSize(new Dimension(1300, 820));
@@ -113,33 +153,68 @@ public class MainWindow extends JFrame {
     private void setupLayout() {
         JPanel topBar = new JPanel();
         topBar.setBackground(BG_PANEL);
-        JButton runBtn = createTopButton("Run/Pause");
-        JButton addReadBtn = createTopButton("Add READ");
-        JButton addUpdateBtn = createTopButton("Add UPDATE");
-        JButton addDeleteBtn = createTopButton("Add DELETE");
-        JButton crashBtn = createTopButton("Simular Crash");
         JComboBox<String> centerViewSelector = new JComboBox<>(new String[]{"Simulación del Disco", "Locks"});
-        JComboBox<SchedulingPolicy> policyCombo = new JComboBox<>(SchedulingPolicy.values());
         styleComboBox(centerViewSelector);
         styleComboBox(policyCombo);
+        styleComboBox(roleCombo);
+        styleTextField(cycleMsField);
 
         runBtn.addActionListener(e -> {
             autoRunning = !autoRunning;
             appendLog(autoRunning ? "Auto-run activado." : "Auto-run pausado.");
         });
-        addReadBtn.addActionListener(e -> addProcess(RequestOp.READ));
-        addUpdateBtn.addActionListener(e -> addProcess(RequestOp.UPDATE));
-        addDeleteBtn.addActionListener(e -> addProcess(RequestOp.DELETE));
+        createFileBtn.addActionListener(e -> createFileFromDialog());
+        createDirBtn.addActionListener(e -> createDirectoryFromDialog());
+        renameNodeBtn.addActionListener(e -> renameNodeFromDialog());
+        deleteNodeBtn.addActionListener(e -> deleteNodeFromDialog());
+        loadScenarioBtn.addActionListener(e -> loadScenarioFromJsonDialog());
+        addReadBtn.addActionListener(e -> addProcessWithRoleValidation(RequestOp.READ));
+        addDeleteBtn.addActionListener(e -> addProcessWithRoleValidation(RequestOp.DELETE));
         crashBtn.addActionListener(e -> {
+            if (!canUseCrash()) {
+                denyAction("Solo administrador puede simular fallos.");
+                return;
+            }
             controller.getFs().simulateCrashAfterNextCriticalOperation();
             systemStatusLabel.setText("Estado del Sistema: Crash programado");
             appendLog("Crash programado para la próxima operación crítica.");
         });
         policyCombo.addActionListener(e -> {
+            if (suppressPolicyEvent) {
+                return;
+            }
+            if (!canChangePolicy()) {
+                denyAction("Solo administrador puede cambiar la política.");
+                suppressPolicyEvent = true;
+                policyCombo.setSelectedItem(controller.getPolicy());
+                suppressPolicyEvent = false;
+                return;
+            }
             SchedulingPolicy policy = (SchedulingPolicy) policyCombo.getSelectedItem();
             controller.setPolicy(policy);
             appendLog("Política cambiada a " + policy.name());
             refreshAll();
+        });
+        roleCombo.addActionListener(e -> {
+            String value = (String) roleCombo.getSelectedItem();
+            UiRole newRole = "Usuario".equals(value) ? UiRole.USER : UiRole.ADMIN;
+            setRole(newRole);
+        });
+        cycleMsField.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                scheduleCycleDurationApply();
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                scheduleCycleDurationApply();
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                scheduleCycleDurationApply();
+            }
         });
         centerViewSelector.addActionListener(e -> {
             String option = (String) centerViewSelector.getSelectedItem();
@@ -151,11 +226,19 @@ public class MainWindow extends JFrame {
         });
 
         topBar.add(runBtn);
+        topBar.add(createFileBtn);
+        topBar.add(createDirBtn);
+        topBar.add(renameNodeBtn);
+        topBar.add(deleteNodeBtn);
         topBar.add(addReadBtn);
-        topBar.add(addUpdateBtn);
         topBar.add(addDeleteBtn);
+        topBar.add(new JLabel("Modo:"));
+        topBar.add(roleCombo);
         topBar.add(new JLabel("Policy:"));
         topBar.add(policyCombo);
+        topBar.add(loadScenarioBtn);
+        topBar.add(new JLabel("Ciclo ms:"));
+        topBar.add(cycleMsField);
         topBar.add(cycleLabel);
 
         JPanel fsPanel = new JPanel(new BorderLayout());
@@ -192,7 +275,7 @@ public class MainWindow extends JFrame {
         journalContainer.add(new JScrollPane(journalTable), BorderLayout.CENTER);
         JPanel journalActions = new JPanel(new BorderLayout());
         journalActions.setBackground(BG_PANEL);
-        journalActions.add(crashBtn);
+        journalActions.add(crashBtn, BorderLayout.CENTER);
         journalActions.add(systemStatusLabel, BorderLayout.SOUTH);
         journalContainer.add(journalActions, BorderLayout.SOUTH);
 
@@ -225,6 +308,7 @@ public class MainWindow extends JFrame {
 
         setLayout(new BorderLayout());
         add(rootVertical, BorderLayout.CENTER);
+        setRole(UiRole.ADMIN);
     }
 
     private JPanel wrap(String title, java.awt.Component comp) {
@@ -352,6 +436,14 @@ public class MainWindow extends JFrame {
         });
     }
 
+    private void styleTextField(JTextField field) {
+        field.setBackground(BG_INPUT);
+        field.setForeground(FG_TEXT);
+        field.setCaretColor(FG_TEXT);
+        field.setBorder(BorderFactory.createLineBorder(BORDER));
+        field.setFont(new Font("SansSerif", Font.PLAIN, 12));
+    }
+
     private void applyTheme() {
         applyThemeRecursively(getContentPane());
 
@@ -409,6 +501,11 @@ public class MainWindow extends JFrame {
         } else if (c instanceof JComboBox) {
             c.setBackground(BG_INPUT);
             c.setForeground(FG_TEXT);
+        } else if (c instanceof JTextField) {
+            c.setBackground(BG_INPUT);
+            c.setForeground(FG_TEXT);
+            ((JTextField) c).setCaretColor(FG_TEXT);
+            ((JTextField) c).setBorder(BorderFactory.createLineBorder(BORDER));
         } else if (c instanceof JScrollPane) {
             c.setBackground(BG_PANEL);
             JScrollPane sp = (JScrollPane) c;
@@ -481,6 +578,278 @@ public class MainWindow extends JFrame {
         }
         appendLog("Proceso creado PID=" + pcb.getPid() + " op=" + op + " recurso=" + pcb.getResourcePath());
         refreshAll();
+    }
+
+    private void createDirectoryFromDialog() {
+        String parentPath = promptRequired("Ruta padre del directorio (ej: / o /users):", "/");
+        if (parentPath == null) {
+            return;
+        }
+        String directoryName = promptRequired("Nombre del directorio:", "");
+        if (directoryName == null) {
+            return;
+        }
+
+        try {
+            controller.createDirectory(parentPath, directoryName, currentOwner(), isAdminMode());
+            appendLog("Directorio creado: " + parentPath + "/" + directoryName);
+            refreshAll();
+        } catch (RuntimeException ex) {
+            showActionError("No se pudo crear directorio", ex);
+        }
+    }
+
+    private void createFileFromDialog() {
+        String parentPath = promptRequired("Ruta padre del archivo (ej: /system):", "/");
+        if (parentPath == null) {
+            return;
+        }
+        String fileName = promptRequired("Nombre del archivo:", "");
+        if (fileName == null) {
+            return;
+        }
+        String sizeValue = promptRequired("Tamaño en bloques (entero > 0):", "1");
+        if (sizeValue == null) {
+            return;
+        }
+
+        int blocks;
+        try {
+            blocks = Integer.parseInt(sizeValue.trim());
+        } catch (NumberFormatException ex) {
+            denyAction("Tamaño inválido. Debe ser un entero mayor que 0.");
+            return;
+        }
+
+        if (blocks <= 0) {
+            denyAction("Tamaño inválido. Debe ser mayor que 0.");
+            return;
+        }
+
+        try {
+            controller.createFile(parentPath, fileName, currentOwner(), blocks, isAdminMode());
+            appendLog("Archivo creado: " + parentPath + "/" + fileName + " (" + blocks + " bloques)");
+            refreshAll();
+        } catch (RuntimeException ex) {
+            showActionError("No se pudo crear archivo", ex);
+        }
+    }
+
+    private void renameNodeFromDialog() {
+        String path = promptRequired("Ruta del nodo a renombrar:", "");
+        if (path == null) {
+            return;
+        }
+        String newName = promptRequired("Nuevo nombre:", "");
+        if (newName == null) {
+            return;
+        }
+
+        try {
+            controller.renameNode(path, newName, isAdminMode());
+            appendLog("Nodo renombrado: " + path + " -> " + newName);
+            refreshAll();
+        } catch (RuntimeException ex) {
+            showActionError("No se pudo renombrar nodo", ex);
+        }
+    }
+
+    private void deleteNodeFromDialog() {
+        String path = promptRequired("Ruta del nodo a eliminar (archivo o directorio):", "");
+        if (path == null) {
+            return;
+        }
+
+        int confirm = JOptionPane.showConfirmDialog(
+                this,
+                "Se eliminará recursivamente si es directorio.\n¿Continuar con " + path + "?",
+                "Confirmar eliminación",
+                JOptionPane.YES_NO_OPTION
+        );
+        if (confirm != JOptionPane.YES_OPTION) {
+            return;
+        }
+
+        try {
+            controller.deleteNode(path, isAdminMode());
+            appendLog("Nodo eliminado: " + path);
+            refreshAll();
+        } catch (RuntimeException ex) {
+            showActionError("No se pudo eliminar nodo", ex);
+        }
+    }
+
+    private void loadScenarioFromJsonDialog() {
+        if (!isAdminMode()) {
+            denyAction("Solo administrador puede cargar escenarios JSON.");
+            return;
+        }
+
+        int useExternal = JOptionPane.showConfirmDialog(
+                this,
+                "¿Deseas cargar un escenario desde archivo JSON?",
+                "Cargar escenario",
+                JOptionPane.YES_NO_OPTION
+        );
+        if (useExternal != JOptionPane.YES_OPTION) {
+            return;
+        }
+
+        String fileName = promptRequired(
+                "Introduzca nombre del JSON a cargar (debe estar en la carpeta origen del proyecto)",
+                "test_input.json"
+        );
+        if (fileName == null) {
+            return;
+        }
+
+        File file = resolveJsonFile(fileName);
+        if (!file.exists() || !file.isFile()) {
+            showActionError("No se pudo cargar escenario", new IllegalStateException("Archivo no encontrado: " + fileName));
+            return;
+        }
+
+        int replace = JOptionPane.showConfirmDialog(
+                this,
+                "¿Reemplazar estado actual del sistema antes de cargar el escenario?",
+                "Modo de carga",
+                JOptionPane.YES_NO_OPTION
+        );
+        boolean replaceState = replace == JOptionPane.YES_OPTION;
+
+        try {
+            String testId = controller.loadScenarioFromJson(file.getPath(), replaceState, true);
+            appendLog(
+                    "Escenario JSON cargado: " + file.getPath()
+                    + " (test_id=" + testId
+                    + ", requests encolados=" + controller.getLastLoadedScenarioRequestCount() + ")."
+            );
+            String[] loadedRequests = controller.getLastLoadedScenarioRequests();
+            for (int i = 0; i < loadedRequests.length; i++) {
+                appendLog("Request encolado -> " + loadedRequests[i]);
+            }
+            systemStatusLabel.setText("Estado del Sistema: Normal");
+            refreshAll();
+        } catch (RuntimeException ex) {
+            showActionError("No se pudo cargar escenario", ex);
+        }
+    }
+
+    private File resolveJsonFile(String inputPath) {
+        File direct = new File(inputPath);
+        if (direct.exists()) {
+            return direct;
+        }
+
+        File fromWorkingDir = new File(System.getProperty("user.dir"), inputPath);
+        if (fromWorkingDir.exists()) {
+            return fromWorkingDir;
+        }
+
+        return direct;
+    }
+
+    private String promptRequired(String prompt, String defaultValue) {
+        String input = JOptionPane.showInputDialog(this, prompt, defaultValue);
+        if (input == null) {
+            return null;
+        }
+        String value = input.trim();
+        if (value.isEmpty()) {
+            denyAction("Entrada inválida. El valor no puede estar vacío.");
+            return null;
+        }
+        return value;
+    }
+
+    private void showActionError(String title, RuntimeException ex) {
+        String message = ex.getMessage() == null ? "Error desconocido." : ex.getMessage();
+        appendLog(title + ": " + message);
+        refreshAll();
+        JOptionPane.showMessageDialog(this, message, title, JOptionPane.ERROR_MESSAGE);
+    }
+
+    private void addProcessWithRoleValidation(RequestOp op) {
+        if (!isOperationAllowed(op)) {
+            denyAction("Modo usuario: operación " + op.name() + " no permitida.");
+            return;
+        }
+        addProcess(op);
+    }
+
+    private boolean isOperationAllowed(RequestOp op) {
+        if (currentRole == UiRole.ADMIN) {
+            return true;
+        }
+        return op == RequestOp.READ;
+    }
+
+    private boolean canUseCrash() {
+        return currentRole == UiRole.ADMIN;
+    }
+
+    private boolean canChangePolicy() {
+        return currentRole == UiRole.ADMIN;
+    }
+
+    private void denyAction(String message) {
+        appendLog("[DENEGADO] " + message);
+        JOptionPane.showMessageDialog(this, message, "Acción no permitida", JOptionPane.WARNING_MESSAGE);
+    }
+
+    private void setRole(UiRole role) {
+        this.currentRole = role;
+        boolean isAdmin = role == UiRole.ADMIN;
+        createFileBtn.setEnabled(isAdmin);
+        createDirBtn.setEnabled(isAdmin);
+        renameNodeBtn.setEnabled(isAdmin);
+        deleteNodeBtn.setEnabled(isAdmin);
+        loadScenarioBtn.setEnabled(isAdmin);
+        addDeleteBtn.setEnabled(isAdmin);
+        crashBtn.setEnabled(isAdmin);
+        policyCombo.setEnabled(isAdmin);
+        String roleName = isAdmin ? "Administrador" : "Usuario";
+        appendLog("Modo activo: " + roleName);
+    }
+
+    private void scheduleCycleDurationApply() {
+        if (cycleMsApplyTimer == null) {
+            cycleMsApplyTimer = new Timer(450, e -> applyCycleDurationSilently());
+            cycleMsApplyTimer.setRepeats(false);
+        }
+        cycleMsApplyTimer.restart();
+    }
+
+    private void applyCycleDurationSilently() {
+        if (timer == null) {
+            return;
+        }
+        String raw = cycleMsField.getText();
+        int ms;
+        try {
+            ms = Integer.parseInt(raw.trim());
+        } catch (NumberFormatException ex) {
+            return;
+        }
+
+        if (ms < 100 || ms > 10000) {
+            return;
+        }
+
+        if (ms == timer.getDelay()) {
+            return;
+        }
+        timer.setDelay(ms);
+        timer.setInitialDelay(ms);
+        appendLog("Duración de ciclo configurada a " + ms + " ms.");
+    }
+
+    private boolean isAdminMode() {
+        return currentRole == UiRole.ADMIN;
+    }
+
+    private String currentOwner() {
+        return isAdminMode() ? "admin" : "user";
     }
 
     private void tickAndRefresh() {
@@ -624,22 +993,22 @@ public class MainWindow extends JFrame {
         model.setRowCount(0);
 
         IOEngine engine = controller.getEngine();
-        model.addRow(new Object[]{"NEW", engine.getNewQueueSnapshot().length, pidsFromSnapshot(engine.getNewQueueSnapshot())});
-        model.addRow(new Object[]{"READY", engine.getReadyQueueSnapshot().length, pidsFromSnapshot(engine.getReadyQueueSnapshot())});
-        model.addRow(new Object[]{"IO_PENDING", engine.getIoPendingSnapshot().length, pidsFromSnapshot(engine.getIoPendingSnapshot())});
-        model.addRow(new Object[]{"RUNNING", engine.getRunningSnapshot().length, pidsFromSnapshot(engine.getRunningSnapshot())});
-        model.addRow(new Object[]{"BLOCKED", engine.getBlockedSnapshot().length, pidsFromSnapshot(engine.getBlockedSnapshot())});
-        model.addRow(new Object[]{"TERMINATED", engine.getTerminatedSnapshot().length, pidsFromSnapshot(engine.getTerminatedSnapshot())});
+        model.addRow(new Object[]{"NEW", engine.getNewQueueSnapshot().length, requestPosFromSnapshot(engine.getNewQueueSnapshot())});
+        model.addRow(new Object[]{"READY", engine.getReadyQueueSnapshot().length, requestPosFromSnapshot(engine.getReadyQueueSnapshot())});
+        model.addRow(new Object[]{"IO_PENDING", engine.getIoPendingSnapshot().length, requestPosFromSnapshot(engine.getIoPendingSnapshot())});
+        model.addRow(new Object[]{"RUNNING", engine.getRunningSnapshot().length, requestPosFromSnapshot(engine.getRunningSnapshot())});
+        model.addRow(new Object[]{"BLOCKED", engine.getBlockedSnapshot().length, requestPosFromSnapshot(engine.getBlockedSnapshot())});
+        model.addRow(new Object[]{"TERMINATED", engine.getTerminatedSnapshot().length, requestPosFromSnapshot(engine.getTerminatedSnapshot())});
     }
 
-    private String pidsFromSnapshot(Object[] values) {
+    private String requestPosFromSnapshot(Object[] values) {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < values.length; i++) {
             ProcessControlBlock pcb = (ProcessControlBlock) values[i];
             if (i > 0) {
                 sb.append(", ");
             }
-            sb.append(pcb.getPid());
+            sb.append(pcb.getRequest().getPos());
         }
         return sb.toString();
     }

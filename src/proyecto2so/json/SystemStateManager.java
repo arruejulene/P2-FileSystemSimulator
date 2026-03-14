@@ -32,7 +32,8 @@ public class SystemStateManager {
 
         int reverted = fs.recoverPendingJournalEntries();
 
-        // Persistimos el journal ya consistente después de recovery.
+        // Persistimos estado consistente completo después de recovery.
+        fsJsonManager.save(fsStatePath, fs);
         journalJsonManager.save(journalPath, fs.getJournalEntries());
         return reverted;
     }

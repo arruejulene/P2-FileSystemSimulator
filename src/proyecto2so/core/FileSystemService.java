@@ -713,6 +713,14 @@ public class FileSystemService {
             throw new IllegalStateException("Ya existe un nodo con ese nombre en el directorio padre.");
         }
 
+        int firstBlockId = file.getFirstBlockId();
+        if (firstBlockId >= 0) {
+            int[] chain = disk.traverseChain(firstBlockId);
+            for (int i = 0; i < chain.length; i++) {
+                disk.getBlockById(chain[i]).renameFile(newName);
+            }
+        }
+
         file.setName(newName);
     }
 

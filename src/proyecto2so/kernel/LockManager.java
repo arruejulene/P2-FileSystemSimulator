@@ -122,4 +122,8 @@ public class LockManager {
 
         return snapshots;
     }
+
+    public void clear() {
+        entries.clear();
+    }
 }

@@ -47,6 +47,12 @@ public class DiskScheduler {
         return totalHeadMovement;
     }
 
+    public void resetHeadPosition(int newHeadPos) {
+        this.headPos = newHeadPos;
+        this.totalHeadMovement = 0;
+        this.direction = +1;
+    }
+
     public void setDirectionUp() {
         this.direction = +1;
     }
