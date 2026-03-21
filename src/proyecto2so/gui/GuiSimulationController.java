@@ -3,6 +3,7 @@ package proyecto2so.gui;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Random;
 import proyecto2so.core.DirectoryNode;
 import proyecto2so.core.FileNode;
@@ -236,6 +237,7 @@ public class GuiSimulationController {
 
         try {
             JsonScenario scenario = JsonScenarioLoader.loadFromFile(jsonPath.trim());
+            validateScenarioForLoad(scenario, replaceCurrentState);
             lastLoadedScenarioRequestCount = 0;
             lastLoadedScenarioRequests = new String[0];
             if (replaceCurrentState) {
@@ -254,6 +256,126 @@ public class GuiSimulationController {
         } catch (IOException ex) {
             throw new IllegalStateException("No se pudo leer el JSON: " + jsonPath);
         }
+    }
+
+    private void validateScenarioForLoad(JsonScenario scenario, boolean replaceCurrentState) {
+        if (scenario == null) {
+            throw new IllegalStateException("El escenario cargado es null.");
+        }
+
+        ArrayList<String> issues = new ArrayList<>();
+
+        if (scenario.getTestId() == null || scenario.getTestId().trim().isEmpty()) {
+            issues.add("test_id es obligatorio.");
+        }
+
+        int diskSize = replaceCurrentState ? 200 : fs.getDisk().getTotalBlocks();
+        int initialHead = scenario.getInitialHead();
+        if (initialHead < 0 || initialHead >= diskSize) {
+            issues.add("initial_head debe estar entre 0 y " + (diskSize - 1) + ".");
+        }
+
+        SystemFileSeed[] seeds = scenario.getSystemFiles();
+        Request[] requests = scenario.getRequests();
+
+        if (seeds == null) {
+            issues.add("system_files no puede ser null.");
+            seeds = new SystemFileSeed[0];
+        }
+
+        if (requests == null) {
+            issues.add("requests no puede ser null.");
+            requests = new Request[0];
+        }
+
+        HashSet<Integer> seenPositions = new HashSet<>();
+        HashSet<String> seenNames = new HashSet<>();
+        int totalRequestedBlocks = 0;
+
+        DirectoryNode systemDir = replaceCurrentState ? null : findDirectoryByPath("/system");
+        HashSet<String> existingSystemNames = new HashSet<>();
+        if (!replaceCurrentState && systemDir != null) {
+            FileNode[] existingFiles = systemDir.getFiles();
+            for (int i = 0; i < existingFiles.length; i++) {
+                existingSystemNames.add(existingFiles[i].getName());
+            }
+            DirectoryNode[] existingDirs = systemDir.getSubdirectories();
+            for (int i = 0; i < existingDirs.length; i++) {
+                existingSystemNames.add(existingDirs[i].getName());
+            }
+        }
+
+        for (int i = 0; i < seeds.length; i++) {
+            SystemFileSeed seed = seeds[i];
+            if (seed == null) {
+                issues.add("system_files contiene una entrada null.");
+                continue;
+            }
+
+            if (seed.getPos() < 0) {
+                issues.add("system_files pos=" + seed.getPos() + " es inválido; debe ser >= 0.");
+            }
+            if (!seenPositions.add(seed.getPos())) {
+                issues.add("system_files tiene pos duplicado: " + seed.getPos() + ".");
+            }
+
+            String name = seed.getName();
+            if (name == null || name.trim().isEmpty()) {
+                issues.add("system_files pos=" + seed.getPos() + " tiene nombre vacío.");
+            } else {
+                if (name.indexOf('/') >= 0 || ".".equals(name) || "..".equals(name)) {
+                    issues.add("system_files pos=" + seed.getPos() + " tiene nombre inválido: " + name + ".");
+                }
+                if (!seenNames.add(name)) {
+                    issues.add("system_files tiene nombre duplicado: " + name + ".");
+                }
+                if (!replaceCurrentState && existingSystemNames.contains(name)) {
+                    issues.add("Ya existe en /system un archivo llamado " + name + ".");
+                }
+            }
+
+            if (seed.getBlocks() <= 0) {
+                issues.add("system_files pos=" + seed.getPos() + " debe tener blocks > 0.");
+            } else {
+                totalRequestedBlocks += seed.getBlocks();
+            }
+        }
+
+        int availableBlocks = replaceCurrentState ? diskSize : fs.getDisk().countFreeBlocks();
+        if (totalRequestedBlocks > availableBlocks) {
+            issues.add(
+                    "Los system_files requieren " + totalRequestedBlocks
+                    + " bloques y solo hay " + availableBlocks + " disponibles."
+            );
+        }
+
+        for (int i = 0; i < requests.length; i++) {
+            Request req = requests[i];
+            if (req == null) {
+                issues.add("requests contiene una entrada null.");
+                continue;
+            }
+
+            if (req.getOp() == null) {
+                issues.add("requests pos=" + req.getPos() + " tiene op null.");
+            }
+
+            if (!seenPositions.contains(req.getPos())) {
+                issues.add("requests pos=" + req.getPos() + " no tiene archivo asociado en system_files.");
+            }
+        }
+
+        if (!issues.isEmpty()) {
+            throw new IllegalStateException(buildScenarioValidationMessage(issues));
+        }
+    }
+
+    private String buildScenarioValidationMessage(ArrayList<String> issues) {
+        StringBuilder sb = new StringBuilder("JSON de escenario inválido:");
+        for (int i = 0; i < issues.size(); i++) {
+            sb.append("\n- ").append(issues.get(i));
+        }
+        return sb.toString();
     }
 
     public String[] runJournalCaseCreateCrash(String parentPath, String fileName, int blocks, boolean isAdmin) {
