@@ -79,6 +79,7 @@ public class MainWindow extends JFrame {
     private final JTextArea logArea;
     private final JLabel cycleLabel;
     private final JLabel systemStatusLabel;
+    private final JLabel totalHeadMovementLabel;
     private final JButton runBtn;
     private final JButton createFileBtn;
     private final JButton createDirBtn;
@@ -112,6 +113,7 @@ public class MainWindow extends JFrame {
         this.logArea = new JTextArea();
         this.cycleLabel = new JLabel("Ciclo: 0");
         this.systemStatusLabel = new JLabel("Estado del Sistema: Normal");
+        this.totalHeadMovementLabel = new JLabel("Movimiento total del cabezal: 0");
         this.runBtn = createTopButton("Run/Pause");
         this.createFileBtn = createTopButton("Crear Archivo");
         this.createDirBtn = createTopButton("Crear Directorio");
@@ -292,7 +294,15 @@ public class MainWindow extends JFrame {
         logArea.setEditable(false);
         logArea.setRows(10);
         JPanel logPanel = wrap("Log de eventos", new JScrollPane(logArea));
-        JPanel queuesPanel = wrap("Colas de procesos", new JScrollPane(queuesTable));
+        JPanel queuesPanel = new JPanel(new BorderLayout());
+        queuesPanel.setBackground(BG_PANEL);
+        applyTitledBorderStyle(queuesPanel, "Colas de procesos");
+        queuesPanel.add(new JScrollPane(queuesTable), BorderLayout.CENTER);
+        JPanel queuesFooter = new JPanel(new BorderLayout());
+        queuesFooter.setBackground(BG_PANEL);
+        queuesFooter.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
+        queuesFooter.add(totalHeadMovementLabel, BorderLayout.WEST);
+        queuesPanel.add(queuesFooter, BorderLayout.SOUTH);
         JSplitPane bottomSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, logPanel, queuesPanel);
         bottomSplit.setResizeWeight(0.72);
         styleSplitPane(bottomSplit);
@@ -463,6 +473,7 @@ public class MainWindow extends JFrame {
 
         cycleLabel.setForeground(FG_TEXT);
         systemStatusLabel.setForeground(FG_TEXT);
+        totalHeadMovementLabel.setForeground(FG_TEXT);
     }
 
     private void styleSplitPane(JSplitPane split) {
@@ -874,6 +885,7 @@ public class MainWindow extends JFrame {
         refreshLocksTable();
         refreshQueuesTable();
         refreshJournalTable();
+        refreshHeadMovementLabel();
     }
 
     private void refreshTree() {
@@ -1024,6 +1036,12 @@ public class MainWindow extends JFrame {
                 entries[i].getStatus().name()
             });
         }
+    }
+
+    private void refreshHeadMovementLabel() {
+        totalHeadMovementLabel.setText(
+                "Movimiento total del cabezal: " + controller.getEngine().getTotalHeadMovement()
+        );
     }
 
     private void refreshLocksTable() {
