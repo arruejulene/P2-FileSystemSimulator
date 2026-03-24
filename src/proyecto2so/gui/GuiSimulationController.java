@@ -1,8 +1,8 @@
 package proyecto2so.gui;
 
 import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Random;
 import proyecto2so.core.DirectoryNode;
@@ -13,11 +13,13 @@ import proyecto2so.core.JsonScenarioLoader;
 import proyecto2so.core.Request;
 import proyecto2so.core.RequestOp;
 import proyecto2so.core.SystemFileSeed;
+import proyecto2so.ds.DynamicArray;
 import proyecto2so.json.SystemStateManager;
 import proyecto2so.json.TestScenarioApplier;
 import proyecto2so.journal.JournalEntry;
 import proyecto2so.kernel.IOEngine;
 import proyecto2so.kernel.ProcessControlBlock;
+import proyecto2so.kernel.QueuedFsOperation;
 import proyecto2so.scheduler.DiskScheduler;
 import proyecto2so.scheduler.SchedulingPolicy;
 
@@ -29,7 +31,7 @@ public class GuiSimulationController {
     private final DiskScheduler scheduler;
     private final IOEngine engine;
     private final SystemStateManager stateManager;
-    private final ArrayList<ProcessControlBlock> processes;
+    private final DynamicArray<ProcessControlBlock> processes;
     private final Random random;
     private int nextPid;
     private int startupRecoveredCount;
@@ -43,7 +45,7 @@ public class GuiSimulationController {
         this.scheduler = new DiskScheduler(SchedulingPolicy.FIFO, 0);
         this.engine = new IOEngine(fs, scheduler);
         this.stateManager = new SystemStateManager();
-        this.processes = new ArrayList<>();
+        this.processes = new DynamicArray<>();
         this.random = new Random();
         this.nextPid = 1;
         this.startupRecoveredCount = 0;
@@ -104,7 +106,7 @@ public class GuiSimulationController {
         return engine;
     }
 
-    public ArrayList<ProcessControlBlock> getProcesses() {
+    public DynamicArray<ProcessControlBlock> getProcesses() {
         return processes;
     }
 
@@ -136,6 +138,38 @@ public class GuiSimulationController {
         return copy;
     }
 
+    public String saveScenarioToJson(String fileName, boolean isAdmin) {
+        requireAdmin(isAdmin, "guardar escenarios JSON");
+        if (fileName == null || fileName.trim().isEmpty()) {
+            throw new IllegalArgumentException("Debe indicar un nombre para el JSON.");
+        }
+
+        String normalizedName = fileName.trim();
+        if (normalizedName.indexOf('/') >= 0 || normalizedName.indexOf('\\') >= 0) {
+            throw new IllegalArgumentException("El nombre del archivo no debe incluir rutas.");
+        }
+        if (!normalizedName.endsWith(".json")) {
+            normalizedName = normalizedName + ".json";
+        }
+
+        File output = new File(System.getProperty("user.dir"), normalizedName);
+        if (output.exists()) {
+            throw new IllegalStateException("Ya existe un archivo con ese nombre: " + normalizedName);
+        }
+
+        String json = buildScenarioJson(normalizedName);
+
+        try {
+            FileWriter writer = new FileWriter(output);
+            writer.write(json);
+            writer.close();
+        } catch (IOException ex) {
+            throw new IllegalStateException("No se pudo guardar el escenario JSON.");
+        }
+
+        return output.getAbsolutePath();
+    }
+
     public ProcessControlBlock addProcess(RequestOp op) {
         FileNode[] files = fs.getFileIndex();
         if (files.length == 0) {
@@ -159,22 +193,52 @@ public class GuiSimulationController {
         return pcb;
     }
 
-    public void createDirectory(String parentPath, String directoryName, String owner, boolean isAdmin) {
+    public ProcessControlBlock createDirectory(String parentPath, String directoryName, String owner, boolean isAdmin) {
         requireAdmin(isAdmin, "crear directorios");
-        try {
-            fs.createDirectory(parentPath, directoryName, owner);
-        } finally {
-            persistState();
-        }
+        validateCreateDirectoryRequest(parentPath, directoryName, owner);
+
+        String targetPath = buildChildPath(parentPath, directoryName);
+        ProcessControlBlock pcb = new ProcessControlBlock(
+                nextPid,
+                owner,
+                new Request(engine.getHeadPos(), RequestOp.CREATE_DIRECTORY),
+                targetPath,
+                QueuedFsOperation.createDirectory(targetPath, normalizePath(parentPath), directoryName.trim(), owner.trim())
+        );
+        nextPid++;
+
+        engine.submitProcess(pcb);
+        processes.add(pcb);
+        persistState();
+        return pcb;
     }
 
-    public void createFile(String parentPath, String fileName, String owner, int sizeInBlocks, boolean isAdmin) {
+    public ProcessControlBlock createFile(String parentPath, String fileName, String owner, int sizeInBlocks, boolean isAdmin) {
         requireAdmin(isAdmin, "crear archivos");
-        try {
-            fs.createFile(parentPath, fileName, owner, sizeInBlocks);
-        } finally {
-            persistState();
-        }
+        validateCreateFileRequest(parentPath, fileName, owner, sizeInBlocks);
+
+        String targetPath = buildChildPath(parentPath, fileName);
+        int predictedPos = fs.getDisk().findFreeBlocks(sizeInBlocks)[0];
+
+        ProcessControlBlock pcb = new ProcessControlBlock(
+                nextPid,
+                owner,
+                new Request(predictedPos, RequestOp.CREATE_FILE),
+                targetPath,
+                QueuedFsOperation.createFile(
+                        targetPath,
+                        normalizePath(parentPath),
+                        fileName.trim(),
+                        owner.trim(),
+                        sizeInBlocks
+                )
+        );
+        nextPid++;
+
+        engine.submitProcess(pcb);
+        processes.add(pcb);
+        persistState();
+        return pcb;
     }
 
     public void renameNode(String path, String newName, boolean isAdmin) {
@@ -203,30 +267,133 @@ public class GuiSimulationController {
         throw new IllegalStateException("No existe nodo en la ruta: " + path);
     }
 
-    public void deleteNode(String path, boolean isAdmin) {
+    public ProcessControlBlock deleteNode(String path, boolean isAdmin) {
         requireAdmin(isAdmin, "eliminar nodos");
+        String normalizedPath = normalizePath(path);
+        int requestPos = validateDeleteNodeRequestAndResolvePos(normalizedPath);
 
-        FileNode file = fs.getFileByPath(path);
+        ProcessControlBlock pcb = new ProcessControlBlock(
+                nextPid,
+                "admin",
+                new Request(requestPos, RequestOp.DELETE_NODE),
+                normalizedPath,
+                QueuedFsOperation.deleteNode(normalizedPath)
+        );
+        nextPid++;
+
+        engine.submitProcess(pcb);
+        processes.add(pcb);
+        persistState();
+        return pcb;
+    }
+
+    private void validateCreateDirectoryRequest(String parentPath, String directoryName, String owner) {
+        String normalizedParent = normalizePath(parentPath);
+        if (directoryName == null || directoryName.trim().isEmpty()) {
+            throw new IllegalArgumentException("El nombre del directorio no puede ser nulo o vacío.");
+        }
+        if (owner == null || owner.trim().isEmpty()) {
+            throw new IllegalArgumentException("El owner no puede ser nulo o vacío.");
+        }
+
+        DirectoryNode parent = findDirectoryByPath(normalizedParent);
+        if (parent == null) {
+            throw new IllegalStateException("La ruta padre no existe.");
+        }
+        if (parent.containsName(directoryName.trim())) {
+            throw new IllegalStateException("Ya existe un nodo con ese nombre en este directorio.");
+        }
+    }
+
+    private void validateCreateFileRequest(String parentPath, String fileName, String owner, int sizeInBlocks) {
+        String normalizedParent = normalizePath(parentPath);
+        if (fileName == null || fileName.trim().isEmpty()) {
+            throw new IllegalArgumentException("El nombre del archivo no puede ser nulo o vacío.");
+        }
+        if (owner == null || owner.trim().isEmpty()) {
+            throw new IllegalArgumentException("El owner no puede ser nulo o vacío.");
+        }
+        if (sizeInBlocks <= 0) {
+            throw new IllegalArgumentException("El tamaño en bloques debe ser mayor que 0.");
+        }
+
+        DirectoryNode parent = findDirectoryByPath(normalizedParent);
+        if (parent == null) {
+            throw new IllegalStateException("La ruta padre no existe.");
+        }
+        if (parent.containsName(fileName.trim())) {
+            throw new IllegalStateException("Ya existe un nodo con ese nombre en este directorio.");
+        }
+        if (fs.getDisk().countFreeBlocks() < sizeInBlocks) {
+            throw new IllegalStateException("No hay suficientes bloques libres.");
+        }
+    }
+
+    private int validateDeleteNodeRequestAndResolvePos(String normalizedPath) {
+        if ("/".equals(normalizedPath)) {
+            throw new IllegalStateException("No se puede eliminar el directorio raíz.");
+        }
+
+        FileNode file = fs.getFileByPath(normalizedPath);
         if (file != null) {
-            try {
-                fs.deleteFile(path);
-            } finally {
-                persistState();
-            }
-            return;
+            return Math.max(0, file.getFirstBlockId());
         }
 
-        DirectoryNode directory = findDirectoryByPath(path);
+        DirectoryNode directory = findDirectoryByPath(normalizedPath);
         if (directory != null) {
-            try {
-                fs.deleteDirectoryRecursive(path);
-            } finally {
-                persistState();
+            int firstBlock = resolveFirstBlockInDirectory(directory);
+            if (firstBlock >= 0) {
+                return firstBlock;
             }
-            return;
+            return engine.getHeadPos();
         }
 
-        throw new IllegalStateException("No existe nodo en la ruta: " + path);
+        throw new IllegalStateException("No existe nodo en la ruta: " + normalizedPath);
+    }
+
+    private int resolveFirstBlockInDirectory(DirectoryNode directory) {
+        FileNode[] files = directory.getFiles();
+        for (int i = 0; i < files.length; i++) {
+            if (files[i].getFirstBlockId() >= 0) {
+                return files[i].getFirstBlockId();
+            }
+        }
+
+        DirectoryNode[] subdirs = directory.getSubdirectories();
+        for (int i = 0; i < subdirs.length; i++) {
+            int block = resolveFirstBlockInDirectory(subdirs[i]);
+            if (block >= 0) {
+                return block;
+            }
+        }
+
+        return -1;
+    }
+
+    private String normalizePath(String path) {
+        if (path == null || path.trim().isEmpty()) {
+            throw new IllegalArgumentException("La ruta no puede ser nula o vacía.");
+        }
+
+        String trimmed = path.trim();
+        if (!trimmed.startsWith("/")) {
+            throw new IllegalArgumentException("La ruta debe empezar con '/'.");
+        }
+
+        if (trimmed.length() > 1 && trimmed.endsWith("/")) {
+            return trimmed.substring(0, trimmed.length() - 1);
+        }
+
+        return trimmed;
+    }
+
+    private String buildChildPath(String parentPath, String childName) {
+        String normalizedParent = normalizePath(parentPath);
+        String trimmedChild = childName.trim();
+        if ("/".equals(normalizedParent)) {
+            return "/" + trimmedChild;
+        }
+        return normalizedParent + "/" + trimmedChild;
     }
 
     public String loadScenarioFromJson(String jsonPath, boolean replaceCurrentState, boolean isAdmin) {
@@ -263,7 +430,7 @@ public class GuiSimulationController {
             throw new IllegalStateException("El escenario cargado es null.");
         }
 
-        ArrayList<String> issues = new ArrayList<>();
+        DynamicArray<String> issues = new DynamicArray<>();
 
         if (scenario.getTestId() == null || scenario.getTestId().trim().isEmpty()) {
             issues.add("test_id es obligatorio.");
@@ -370,12 +537,137 @@ public class GuiSimulationController {
         }
     }
 
-    private String buildScenarioValidationMessage(ArrayList<String> issues) {
+    private String buildScenarioValidationMessage(DynamicArray<String> issues) {
         StringBuilder sb = new StringBuilder("JSON de escenario inválido:");
         for (int i = 0; i < issues.size(); i++) {
             sb.append("\n- ").append(issues.get(i));
         }
         return sb.toString();
+    }
+
+    private String buildScenarioJson(String normalizedName) {
+        DirectoryNode systemDir = findDirectoryByPath("/system");
+        if (systemDir == null) {
+            throw new IllegalStateException("No existe el directorio /system.");
+        }
+
+        DirectoryNode[] systemSubdirs = systemDir.getSubdirectories();
+        if (systemSubdirs.length > 0) {
+            throw new IllegalStateException(
+                    "No se puede exportar el escenario: el formato actual no soporta subdirectorios dentro de /system."
+            );
+        }
+
+        FileNode[] systemFiles = systemDir.getFiles();
+        DynamicArray<ProcessControlBlock> activeRequests = collectSerializableActiveRequests();
+
+        String testId = normalizedName;
+        if (testId.endsWith(".json")) {
+            testId = testId.substring(0, testId.length() - 5);
+        }
+
+        StringBuilder json = new StringBuilder();
+        json.append("{\n");
+        json.append("  \"test_id\": \"").append(escapeJson(testId)).append("\",\n");
+        json.append("  \"initial_head\": ").append(engine.getHeadPos()).append(",\n");
+        json.append("  \"requests\": [\n");
+
+        for (int i = 0; i < activeRequests.size(); i++) {
+            ProcessControlBlock pcb = activeRequests.get(i);
+            FileNode file = fs.getFileByPath(pcb.getResourcePath());
+            if (file == null) {
+                throw new IllegalStateException(
+                        "No se puede exportar el escenario: existe un proceso activo cuyo recurso ya no existe: "
+                        + pcb.getResourcePath()
+                );
+            }
+
+            if (i > 0) {
+                json.append(",\n");
+            }
+
+            json.append("    {\"pos\": ")
+                    .append(file.getFirstBlockId())
+                    .append(", \"op\": \"")
+                    .append(pcb.getRequest().getOp().name())
+                    .append("\"}");
+        }
+
+        if (!activeRequests.isEmpty()) {
+            json.append("\n");
+        }
+
+        json.append("  ],\n");
+        json.append("  \"system_files\": {\n");
+
+        for (int i = 0; i < systemFiles.length; i++) {
+            FileNode file = systemFiles[i];
+            if (i > 0) {
+                json.append(",\n");
+            }
+
+            json.append("    \"")
+                    .append(file.getFirstBlockId())
+                    .append("\": {\n");
+            json.append("      \"name\": \"").append(escapeJson(file.getName())).append("\",\n");
+            json.append("      \"blocks\": ").append(file.getSizeInBlocks()).append("\n");
+            json.append("    }");
+        }
+
+        if (systemFiles.length > 0) {
+            json.append("\n");
+        }
+
+        json.append("  }\n");
+        json.append("}\n");
+        return json.toString();
+    }
+
+    private DynamicArray<ProcessControlBlock> collectSerializableActiveRequests() {
+        DynamicArray<ProcessControlBlock> result = new DynamicArray<>();
+
+        Object[] values = engine.getNewQueueSnapshot();
+        collectSerializableRequestsFromSnapshot(values, result);
+        values = engine.getReadyQueueSnapshot();
+        collectSerializableRequestsFromSnapshot(values, result);
+        values = engine.getIoPendingSnapshot();
+        collectSerializableRequestsFromSnapshot(values, result);
+        values = engine.getBlockedSnapshot();
+        collectSerializableRequestsFromSnapshot(values, result);
+        values = engine.getRunningSnapshot();
+        collectSerializableRequestsFromSnapshot(values, result);
+
+        return result;
+    }
+
+    private void collectSerializableRequestsFromSnapshot(Object[] values, DynamicArray<ProcessControlBlock> result) {
+        for (int i = 0; i < values.length; i++) {
+            ProcessControlBlock pcb = (ProcessControlBlock) values[i];
+            if (pcb == null) {
+                continue;
+            }
+
+            if (pcb.getQueuedFsOperation() != null) {
+                throw new IllegalStateException(
+                        "No se puede exportar el escenario: hay operaciones CRUD encoladas no compatibles con el formato."
+                );
+            }
+
+            RequestOp op = pcb.getRequest().getOp();
+            if (op != RequestOp.READ && op != RequestOp.UPDATE && op != RequestOp.DELETE) {
+                throw new IllegalStateException(
+                        "No se puede exportar el escenario: existe una operación no compatible: " + op.name()
+                );
+            }
+
+            result.add(pcb);
+        }
+    }
+
+    private String escapeJson(String value) {
+        String escaped = value.replace("\\", "\\\\");
+        escaped = escaped.replace("\"", "\\\"");
+        return escaped;
     }
 
     public String[] runJournalCaseCreateCrash(String parentPath, String fileName, int blocks, boolean isAdmin) {

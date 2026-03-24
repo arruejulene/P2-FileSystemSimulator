@@ -86,8 +86,8 @@ public class MainWindow extends JFrame {
     private final JButton renameNodeBtn;
     private final JButton deleteNodeBtn;
     private final JButton loadScenarioBtn;
+    private final JButton saveScenarioBtn;
     private final JButton addReadBtn;
-    private final JButton addDeleteBtn;
     private final JButton crashBtn;
     private final JComboBox<SchedulingPolicy> policyCombo;
     private final JComboBox<String> roleCombo;
@@ -120,8 +120,8 @@ public class MainWindow extends JFrame {
         this.renameNodeBtn = createTopButton("Actualizar Nodo");
         this.deleteNodeBtn = createTopButton("Eliminar Nodo");
         this.loadScenarioBtn = createTopButton("Cargar Escenario JSON");
+        this.saveScenarioBtn = createTopButton("Guardar Escenario JSON");
         this.addReadBtn = createTopButton("Add READ");
-        this.addDeleteBtn = createTopButton("Add DELETE");
         this.crashBtn = createTopButton("Simular Crash");
         this.policyCombo = new JComboBox<>(SchedulingPolicy.values());
         this.roleCombo = new JComboBox<>(new String[]{"Administrador", "Usuario"});
@@ -170,8 +170,8 @@ public class MainWindow extends JFrame {
         renameNodeBtn.addActionListener(e -> renameNodeFromDialog());
         deleteNodeBtn.addActionListener(e -> deleteNodeFromDialog());
         loadScenarioBtn.addActionListener(e -> loadScenarioFromJsonDialog());
+        saveScenarioBtn.addActionListener(e -> saveScenarioToJsonDialog());
         addReadBtn.addActionListener(e -> addProcessWithRoleValidation(RequestOp.READ));
-        addDeleteBtn.addActionListener(e -> addProcessWithRoleValidation(RequestOp.DELETE));
         crashBtn.addActionListener(e -> {
             if (!canUseCrash()) {
                 denyAction("Solo administrador puede simular fallos.");
@@ -233,12 +233,12 @@ public class MainWindow extends JFrame {
         topBar.add(renameNodeBtn);
         topBar.add(deleteNodeBtn);
         topBar.add(addReadBtn);
-        topBar.add(addDeleteBtn);
         topBar.add(new JLabel("Modo:"));
         topBar.add(roleCombo);
         topBar.add(new JLabel("Policy:"));
         topBar.add(policyCombo);
         topBar.add(loadScenarioBtn);
+        topBar.add(saveScenarioBtn);
         topBar.add(new JLabel("Ciclo ms:"));
         topBar.add(cycleMsField);
         topBar.add(cycleLabel);
@@ -602,8 +602,11 @@ public class MainWindow extends JFrame {
         }
 
         try {
-            controller.createDirectory(parentPath, directoryName, currentOwner(), isAdminMode());
-            appendLog("Directorio creado: " + parentPath + "/" + directoryName);
+            ProcessControlBlock pcb = controller.createDirectory(parentPath, directoryName, currentOwner(), isAdminMode());
+            appendLog(
+                    "Proceso encolado PID=" + pcb.getPid()
+                    + " op=CREATE_DIRECTORY recurso=" + pcb.getResourcePath()
+            );
             refreshAll();
         } catch (RuntimeException ex) {
             showActionError("No se pudo crear directorio", ex);
@@ -638,8 +641,12 @@ public class MainWindow extends JFrame {
         }
 
         try {
-            controller.createFile(parentPath, fileName, currentOwner(), blocks, isAdminMode());
-            appendLog("Archivo creado: " + parentPath + "/" + fileName + " (" + blocks + " bloques)");
+            ProcessControlBlock pcb = controller.createFile(parentPath, fileName, currentOwner(), blocks, isAdminMode());
+            appendLog(
+                    "Proceso encolado PID=" + pcb.getPid()
+                    + " op=CREATE_FILE recurso=" + pcb.getResourcePath()
+                    + " bloques=" + blocks
+            );
             refreshAll();
         } catch (RuntimeException ex) {
             showActionError("No se pudo crear archivo", ex);
@@ -682,8 +689,11 @@ public class MainWindow extends JFrame {
         }
 
         try {
-            controller.deleteNode(path, isAdminMode());
-            appendLog("Nodo eliminado: " + path);
+            ProcessControlBlock pcb = controller.deleteNode(path, isAdminMode());
+            appendLog(
+                    "Proceso encolado PID=" + pcb.getPid()
+                    + " op=DELETE_NODE recurso=" + pcb.getResourcePath()
+            );
             refreshAll();
         } catch (RuntimeException ex) {
             showActionError("No se pudo eliminar nodo", ex);
@@ -743,6 +753,28 @@ public class MainWindow extends JFrame {
             refreshAll();
         } catch (RuntimeException ex) {
             showActionError("No se pudo cargar escenario", ex);
+        }
+    }
+
+    private void saveScenarioToJsonDialog() {
+        if (!isAdminMode()) {
+            denyAction("Solo administrador puede guardar escenarios JSON.");
+            return;
+        }
+
+        String fileName = promptRequired(
+                "Introduzca nombre del JSON a guardar (se guardará en la carpeta origen del proyecto)",
+                "scenario_export.json"
+        );
+        if (fileName == null) {
+            return;
+        }
+
+        try {
+            String savedPath = controller.saveScenarioToJson(fileName, true);
+            appendLog("Escenario JSON guardado en: " + savedPath);
+        } catch (RuntimeException ex) {
+            showActionError("No se pudo guardar escenario", ex);
         }
     }
 
@@ -816,7 +848,7 @@ public class MainWindow extends JFrame {
         renameNodeBtn.setEnabled(isAdmin);
         deleteNodeBtn.setEnabled(isAdmin);
         loadScenarioBtn.setEnabled(isAdmin);
-        addDeleteBtn.setEnabled(isAdmin);
+        saveScenarioBtn.setEnabled(isAdmin);
         crashBtn.setEnabled(isAdmin);
         policyCombo.setEnabled(isAdmin);
         String roleName = isAdmin ? "Administrador" : "Usuario";
