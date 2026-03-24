@@ -1,0 +1,36 @@
+{
+  "test_id": "scenario_export",
+  "initial_head": 50,
+  "requests": [
+  ],
+  "system_files": {
+    "0": {
+      "name": "boot_sect.bin",
+      "blocks": 2
+    },
+    "2": {
+      "name": "readme.txt",
+      "blocks": 1
+    },
+    "3": {
+      "name": "script.py_upd_3",
+      "blocks": 8
+    },
+    "11": {
+      "name": "style.css",
+      "blocks": 6
+    },
+    "17": {
+      "name": "config.sys_upd_5",
+      "blocks": 4
+    },
+    "33": {
+      "name": "data_log.csv_upd_7",
+      "blocks": 28
+    },
+    "61": {
+      "name": "video_clip.mp4",
+      "blocks": 52
+    }
+  }
+}
