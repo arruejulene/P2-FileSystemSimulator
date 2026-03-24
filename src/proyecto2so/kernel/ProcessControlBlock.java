@@ -19,6 +19,7 @@ public class ProcessControlBlock {
     private ProcessState state;
     private final Request request;
     private final String resourcePath;
+    private final QueuedFsOperation queuedFsOperation;
     private final LockType neededLock;
     private String blockedReason;
 
@@ -26,6 +27,10 @@ public class ProcessControlBlock {
     private int remainingTicks;
 
     public ProcessControlBlock(int pid, String user, Request request, String resourcePath) {
+        this(pid, user, request, resourcePath, null);
+    }
+
+    public ProcessControlBlock(int pid, String user, Request request, String resourcePath, QueuedFsOperation queuedFsOperation) {
         if (pid <= 0) throw new IllegalArgumentException("pid debe ser > 0");
         if (user == null || user.trim().isEmpty()) throw new IllegalArgumentException("user inválido");
         if (request == null) throw new IllegalArgumentException("request no puede ser null");
@@ -35,6 +40,7 @@ public class ProcessControlBlock {
         this.user = user;
         this.request = request;
         this.resourcePath = resourcePath;
+        this.queuedFsOperation = queuedFsOperation;
         this.neededLock = lockFromOp(request.getOp());
         this.state = ProcessState.NEW;
         this.blockedReason = null;
@@ -50,6 +56,9 @@ public class ProcessControlBlock {
         if (op == RequestOp.READ) return 2;
         if (op == RequestOp.UPDATE) return 3;
         if (op == RequestOp.DELETE) return 2;
+        if (op == RequestOp.CREATE_FILE) return 3;
+        if (op == RequestOp.CREATE_DIRECTORY) return 2;
+        if (op == RequestOp.DELETE_NODE) return 3;
         return 2;
     }
 
@@ -61,6 +70,7 @@ public class ProcessControlBlock {
 
     public Request getRequest() { return request; }
     public String getResourcePath() { return resourcePath; }
+    public QueuedFsOperation getQueuedFsOperation() { return queuedFsOperation; }
     public LockType getNeededLock() { return neededLock; }
 
     public String getBlockedReason() { return blockedReason; }

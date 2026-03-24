@@ -1,14 +1,14 @@
 package proyecto2so.journal;
 
-import java.util.ArrayList;
+import proyecto2so.ds.DynamicArray;
 
 public class JournalManager {
-    private final ArrayList<JournalEntry> entries;
+    private final DynamicArray<JournalEntry> entries;
     private long nextId;
     private boolean crashAfterApply;
 
     public JournalManager() {
-        this.entries = new ArrayList<>();
+        this.entries = new DynamicArray<>();
         this.nextId = 1L;
         this.crashAfterApply = false;
     }
@@ -46,7 +46,12 @@ public class JournalManager {
     }
 
     public JournalEntry[] getEntries() {
-        return entries.toArray(new JournalEntry[0]);
+        Object[] values = entries.toArray();
+        JournalEntry[] result = new JournalEntry[values.length];
+        for (int i = 0; i < values.length; i++) {
+            result[i] = (JournalEntry) values[i];
+        }
+        return result;
     }
 
     public void replaceEntries(JournalEntry[] loadedEntries) {

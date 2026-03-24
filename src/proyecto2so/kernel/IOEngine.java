@@ -14,6 +14,7 @@ import proyecto2so.core.FileNode;
 import proyecto2so.core.FileSystemService;
 import proyecto2so.core.Request;
 import proyecto2so.core.RequestOp;
+import proyecto2so.core.DirectoryNode;
 import proyecto2so.ds.Queue;
 import proyecto2so.ds.SinglyLinkedList;
 import proyecto2so.scheduler.DiskScheduler;
@@ -236,6 +237,13 @@ public class IOEngine {
 
     private void executeRequest(ProcessControlBlock pcb) {
         Request req = pcb.getRequest();
+        QueuedFsOperation queuedOp = pcb.getQueuedFsOperation();
+
+        if (queuedOp != null) {
+            executeQueuedFsOperation(queuedOp);
+            return;
+        }
+
         String path = resolveExecutionPath(pcb);
 
         // The target may have been renamed/deleted by a previously completed process.
@@ -257,6 +265,45 @@ public class IOEngine {
         } else {
             throw new IllegalStateException("Operación no soportada: " + req.getOp());
         }
+    }
+
+    private void executeQueuedFsOperation(QueuedFsOperation queuedOp) {
+        if (queuedOp.getType() == QueuedFsOperation.Type.CREATE_FILE) {
+            fs.createFile(
+                    queuedOp.getParentPath(),
+                    queuedOp.getNodeName(),
+                    queuedOp.getOwner(),
+                    queuedOp.getSizeInBlocks()
+            );
+            return;
+        }
+
+        if (queuedOp.getType() == QueuedFsOperation.Type.CREATE_DIRECTORY) {
+            fs.createDirectory(
+                    queuedOp.getParentPath(),
+                    queuedOp.getNodeName(),
+                    queuedOp.getOwner()
+            );
+            return;
+        }
+
+        if (queuedOp.getType() == QueuedFsOperation.Type.DELETE_NODE) {
+            String path = queuedOp.getTargetPath();
+            FileNode file = fs.getFileByPath(path);
+            if (file != null) {
+                fs.deleteFile(path);
+                return;
+            }
+
+            if (resolveDirectory(path) != null) {
+                fs.deleteDirectoryRecursive(path);
+                return;
+            }
+
+            throw new IllegalStateException("DELETE_NODE: Nodo no existe: " + path);
+        }
+
+        throw new IllegalStateException("Operación encolada no soportada: " + queuedOp.getType());
     }
 
     private String resolveExecutionPath(ProcessControlBlock pcb) {
@@ -284,5 +331,46 @@ public class IOEngine {
         if (idx == -1) return path;
         if (idx == path.length() - 1) return path;
         return path.substring(idx + 1);
+    }
+
+    private DirectoryNode resolveDirectory(String path) {
+        if (path == null || path.trim().isEmpty()) {
+            return null;
+        }
+
+        DirectoryNode root = fs.getRoot();
+        if (root == null) {
+            return null;
+        }
+
+        if ("/".equals(path)) {
+            return root;
+        }
+
+        String[] parts = path.split("/");
+        DirectoryNode current = root;
+
+        for (int i = 1; i < parts.length; i++) {
+            String part = parts[i];
+            if (part == null || part.isEmpty()) {
+                continue;
+            }
+
+            DirectoryNode next = null;
+            DirectoryNode[] subdirs = current.getSubdirectories();
+            for (int j = 0; j < subdirs.length; j++) {
+                if (subdirs[j].getName().equals(part)) {
+                    next = subdirs[j];
+                    break;
+                }
+            }
+
+            if (next == null) {
+                return null;
+            }
+            current = next;
+        }
+
+        return current;
     }
 }
