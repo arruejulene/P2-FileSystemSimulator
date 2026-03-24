@@ -1,0 +1,36 @@
+{
+  "test_id": "scenario_export1",
+  "initial_head": 65,
+  "requests": [
+  ],
+  "system_files": {
+    "0": {
+      "name": "config.sys",
+      "blocks": 4
+    },
+    "4": {
+      "name": "video_clip.mp4_upd_2",
+      "blocks": 20
+    },
+    "24": {
+      "name": "readme.txt",
+      "blocks": 1
+    },
+    "37": {
+      "name": "boot_sect.bin",
+      "blocks": 2
+    },
+    "39": {
+      "name": "audit.log_upd_6",
+      "blocks": 6
+    },
+    "45": {
+      "name": "script.py",
+      "blocks": 8
+    },
+    "25": {
+      "name": "hola.txt",
+      "blocks": 24
+    }
+  }
+}
